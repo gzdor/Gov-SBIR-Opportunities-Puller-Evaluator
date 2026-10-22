@@ -72,7 +72,11 @@ jobs:
         with:
           tag_name: latest
           name: Latest Windows build
-          prerelease: true
+          prerelease: false
+          body: |
+            Latest automatically built Windows desktop app.
+            Download `DSIP_Downloader.exe` below and double-click to run.
+            Windows 10/11, 64-bit only. No install required.
           files: dist/DSIP_Downloader.exe
 
       - name: Publish tagged release

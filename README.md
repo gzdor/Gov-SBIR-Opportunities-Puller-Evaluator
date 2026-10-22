@@ -14,6 +14,42 @@ Every open topic is saved as its own PDF in a timestamped folder, alongside a `m
 
 ![The timestamped output folder with one PDF per topic, a manifest, and a solicitation_documents subfolder](docs/images/output-folder.png)
 
+## Download for Windows (no Python needed)
+
+The easiest way to use this tool is the prebuilt Windows app. **You do not need Python or anything else installed** — the Python runtime, Tkinter, and every dependency are bundled inside one file. There is nothing to install.
+
+> ### [⬇ Download DSIP_Downloader.exe](https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases/download/latest/DSIP_Downloader.exe)
+>
+> Single file, ~14 MB. From the **Latest Windows build** release.
+
+Prefer the command line? Download it with one command in PowerShell:
+
+```powershell
+curl.exe -L -o "$env:USERPROFILE\Downloads\DSIP_Downloader.exe" https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases/download/latest/DSIP_Downloader.exe
+```
+
+You can also browse every build on the [Releases page](https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases).
+
+### Compatibility (Windows only)
+
+| Requirement | Supported |
+| --- | --- |
+| Operating system | **Windows 10** or **Windows 11** |
+| Architecture | **64-bit (x64) only** |
+| Install needed | **None** — a single portable `.exe` |
+| macOS / Linux | **Not supported** |
+
+This executable is **Windows only**. It will **not** run on macOS, Linux, 32-bit Windows, or Windows 7/8. (macOS support is not currently planned; Mac users can still run `gui.py` or `main.py` from source — see below.)
+
+### How to run it
+
+There is no installer — it is a single, self-contained file.
+
+1. Download `DSIP_Downloader.exe` using the link or command above.
+2. Double-click the file to open the app.
+3. The first launch may show a blue **"Windows protected your PC"** SmartScreen prompt, because the app is not code-signed. Click **More info → Run anyway**. This warning is normal for free, unsigned apps; this `.exe` is built automatically from the source in this repository.
+4. Pick a folder to save into (for example your Downloads folder), click **Download all opportunities**, and watch the progress bar. When it finishes, the app offers to open the folder of PDFs.
+
 ## Topic PDFs vs. solicitation documents
 
 The downloader saves two kinds of PDF, which play different roles. Understanding the distinction makes the output directory easy to navigate.
@@ -370,3 +406,13 @@ No Google API key is required for `main.py`. The search and PDF routes it uses a
 - **Throttling or connection resets.** Lower `--workers`.
 - **The catalog total changed between two runs.** That is the live DSIP list. Compare `apiTotal` in the two manifests.
 - **Notebook browser cells.** They need a Chromium install from Playwright (`playwright install chromium`) and, on Linux/WSL, `playwright install-deps`. Outputs go under `notebook_outputs/` unless `DSIP_OUTPUT_ROOT` is set. `main.py` does not launch a browser.
+
+## License
+
+This project is licensed under the **[PolyForm Noncommercial License 1.0.0](LICENSE)**.
+
+In plain terms: you may use, copy, modify, and share this software for **personal and other noncommercial purposes only**. **Commercial use is not permitted** — including use by or on behalf of a company or any for-profit activity. See the [LICENSE](LICENSE) file for the full, binding terms.
+
+The downloaded government topic and solicitation PDFs are public U.S. Government documents and are not covered by this license; this license applies to the code and the desktop app in this repository.
+
+*This summary is for convenience only and is not legal advice.*
