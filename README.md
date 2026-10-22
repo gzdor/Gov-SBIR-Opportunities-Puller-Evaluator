@@ -4,6 +4,37 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 `main.py` is the script to run. It uses only the Python standard library. `DSIP_portal_ai_query_tool.ipynb` is the Colab notebook that found the DSIP search API and the download buttons; it is kept as the research log.
 
+## Topic PDFs vs. solicitation documents
+
+The downloader saves two kinds of PDF, which play different roles. Understanding the distinction makes the output directory easy to navigate.
+
+### Topic PDFs (one per topic, saved at the top level)
+
+Files like `topic_DAF27BZ01-DV007_Reusable Illumination System.pdf`.
+
+- **One per topic.** A "topic" is a single, specific research problem an agency wants solved (e.g. "Low SWaP, 2-micron Fiber Amplifiers"). Each row in the DSIP open-topics list is one topic.
+- The PDF is the **topic-detail sheet**: topic code, title, objective, description, phases, technical requirements, references, and the Q&A / point-of-contact info for *that one topic*. It is what you read to decide whether to propose.
+- This is the file behind **"Download Topic Details as: PDF"** on each DSIP row, fetched from `/topics/api/public/topics/{topicId}/download/PDF`.
+
+### Solicitation documents (one per solicitation, saved in `solicitation_documents/`)
+
+Files like `ARMY_SBIR_27BX_R1_v2.pdf` or `DoW 2027 SBIR BAA Preface_10072026.pdf`.
+
+- **One per solicitation / BAA, shared across many topics.** A "solicitation" (or BAA/CSO) is the umbrella funding announcement that a whole *batch* of topics belongs to. For example, all the `DAF27BZ01-*` topics live under the same DAF solicitation.
+- These PDFs hold the **program-wide rules**: eligibility, proposal format, deadlines, submission instructions, evaluation criteria, contract terms, firm-size limits, etc. — the legal/administrative boilerplate that applies to every topic in that solicitation.
+- Because many topics map to the same solicitation, there are usually far fewer of these than topics. `main.py` de-duplicates them so each shared solicitation PDF is downloaded once, not once per topic.
+
+### The relationship
+
+Think of it as **parent → child**:
+
+```text
+Solicitation (BAA)  ──►  the rulebook for applying      (solicitation_documents/)
+   └─ Topic          ──►  the specific problem to solve  (topic_*.pdf at top level)
+```
+
+To actually submit a proposal you need **both**: the topic PDF tells you *what* to build, and the solicitation PDF tells you *how, when, and by whom* it can be submitted. Each topic's entry in `manifest.json` lists which solicitation it belongs to, so you can trace any `topic_*.pdf` back to its governing document in `solicitation_documents/`.
+
 ## Architecture
 
 ```mermaid
@@ -183,7 +214,24 @@ Downloads are network and disk bound, not CPU bound, so `main.py` uses a **threa
 
 `--workers` sets the thread count. The default scales with the machine, `cpu_count * 5`, floored at 4 and capped at 64 so a large box does not open an unreasonable number of simultaneous connections to one government server. The pool is also capped at the number of files to fetch. Catalog paging stays sequential because each page request depends on the previous page number, but that is a handful of small JSON requests; the PDFs, which are the slow part, all download concurrently.
 
-The run prints `[done/total]` progress as each file lands, so lines appear out of catalog order. `manifest.json` is always written in catalog order regardless of which thread finished first, and the chosen worker count is recorded in the manifest.
+### Progress and timing
+
+Each download phase (shared solicitation PDFs, then topic PDFs) shows a `tqdm`-style progress bar that advances as files land, with percent complete, a `done/total` count, elapsed/ETA clock, and a files-per-second rate:
+
+```text
+topic PDF  64%|##################----------| 18/28 [00:03<00:02,  4.7 file/s]
+```
+
+The bar is drawn with the standard library only (no `tqdm` dependency) and uses ASCII glyphs so it never breaks a non-UTF-8 Windows console. On an interactive terminal it redraws one line in place; when stdout is redirected (a file, a pipe, or CI) it prints one compact line per completion so logs stay readable. Any failure is written on its own line above the bar so it is never lost.
+
+When the run finishes, the summary reports both **Download time** (wall time spent downloading PDFs) and **Total run time** (the whole run, including catalog paging and manifest writing):
+
+```text
+Download time: 1m 18.3s
+Total run time: 1m 19.3s
+```
+
+The same values are recorded in `manifest.json` as `downloadSeconds` and `totalSeconds`. `manifest.json` is always written in catalog order regardless of which thread finished first, and the chosen worker count is recorded in the manifest.
 
 ## Tests
 
@@ -227,7 +275,7 @@ all_dsip_opportunities_20261021_214405/
 
 - Topic PDFs are the file behind **Download Topic Details as: PDF** on each row. The DSIP app requests `GET /topics/api/public/topics/{topicId}/download/PDF`; a direct request returns a body that starts with `%PDF`. The filename follows the app's pattern, `topic_{topicCode}_{topicTitle}.pdf`, with characters Windows rejects (`\ / : * ? " < > |`) replaced. Titles longer than 100 characters are shortened in the filename; the full title stays in `manifest.json`. Filenames are assigned before any thread runs, so concurrent workers never race for the same name; a collision gets the topic id appended.
 - `solicitation_documents/` holds each distinct BAA preface and component instruction PDF referenced by those topics (`baaPrefaceUploadId`, `baaInstructions[].uploadId`), fetched from `submissions/api/public/download?uploadId=`. Many topics share one preface, so each upload id is saved once.
-- `manifest.json` lists the API total, the worker count, every topic (code, title, status, component, program, solicitation, cycle, release, dates), the local PDF name, and any failures.
+- `manifest.json` lists the API total, the worker count, the download and total run times (`downloadSeconds`, `totalSeconds`), every topic (code, title, status, component, program, solicitation, cycle, release, dates), the local PDF name, and any failures.
 
 `all_dsip_opportunities_*/` is listed in `.gitignore`. A custom `--output` folder inside the repo is not ignored automatically.
 

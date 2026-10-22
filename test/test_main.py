@@ -357,3 +357,32 @@ def test_run_records_worker_count_in_manifest(monkeypatch, tmp_path):
     assert main.run(tmp_path, workers=3) == 0
     manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["workers"] == 3
+    assert isinstance(manifest["downloadSeconds"], (int, float))
+    assert isinstance(manifest["totalSeconds"], (int, float))
+    assert manifest["totalSeconds"] >= manifest["downloadSeconds"]
+
+
+def test_format_duration_switches_units():
+    assert main.format_duration(0) == "0.0s"
+    assert main.format_duration(12.34) == "12.3s"
+    assert main.format_duration(75) == "1m 15.0s"
+    assert main.format_duration(3725).startswith("1h 02m")
+
+
+def test_format_clock_minutes_and_hours():
+    assert main.format_clock(0) == "00:00"
+    assert main.format_clock(65) == "01:05"
+    assert main.format_clock(3661) == "1:01:01"
+
+
+def test_progress_bar_counts_and_closes(capsys):
+    bar = main.ProgressBar(total=2, label="test")
+    bar.update(1)
+    bar.write("a note")
+    bar.update(1)
+    bar.close()
+    assert bar.count == 2
+    out = capsys.readouterr().out
+    assert "test" in out
+    assert "a note" in out
+    assert "2/2" in out

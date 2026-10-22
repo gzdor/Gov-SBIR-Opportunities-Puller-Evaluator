@@ -87,6 +87,95 @@ def log(message: str) -> None:
         print(message, flush=True)
 
 
+def format_clock(seconds: float) -> str:
+    """Render seconds as mm:ss, or h:mm:ss past an hour (for the progress bar)."""
+    total = int(max(0, seconds))
+    minutes, secs = divmod(total, 60)
+    if minutes < 60:
+        return f"{minutes:02d}:{secs:02d}"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours:d}:{minutes:02d}:{secs:02d}"
+
+
+def format_duration(seconds: float) -> str:
+    """Human-readable elapsed time for the end-of-run summary."""
+    seconds = max(0.0, float(seconds))
+    if seconds < 60:
+        return f"{seconds:.1f}s"
+    minutes, secs = divmod(seconds, 60)
+    if minutes < 60:
+        return f"{int(minutes)}m {secs:04.1f}s"
+    hours, minutes = divmod(int(minutes), 60)
+    return f"{hours}h {minutes:02d}m {secs:04.1f}s"
+
+
+class ProgressBar:
+    """A small tqdm-style progress bar with no third-party dependency.
+
+    Uses ASCII glyphs so it cannot raise UnicodeEncodeError on a non-UTF-8
+    Windows console. On a TTY it redraws one line in place; when stdout is
+    redirected (a file or CI) it prints one compact line per completion so the
+    log stays readable.
+    """
+
+    def __init__(self, total: int, label: str, width: int = 28) -> None:
+        self.total = total
+        self.label = label
+        self.width = width
+        self.count = 0
+        self.start = time.monotonic()
+        self.stream = sys.stdout
+        self.is_tty = hasattr(self.stream, "isatty") and self.stream.isatty()
+        self._last_len = 0
+        self._lock = threading.Lock()
+
+    def _render(self) -> str:
+        elapsed = time.monotonic() - self.start
+        fraction = self.count / self.total if self.total else 1.0
+        filled = int(self.width * fraction)
+        bar = "#" * filled + "-" * (self.width - filled)
+        rate = self.count / elapsed if elapsed > 0 else 0.0
+        eta = (self.total - self.count) / rate if rate > 0 else 0.0
+        return (
+            f"{self.label} {int(fraction * 100):3d}%|{bar}| "
+            f"{self.count}/{self.total} "
+            f"[{format_clock(elapsed)}<{format_clock(eta)}, {rate:4.1f} file/s]"
+        )
+
+    def _draw(self) -> None:
+        line = self._render()
+        if self.is_tty:
+            padding = " " * max(0, self._last_len - len(line))
+            self.stream.write("\r" + line + padding)
+            self._last_len = len(line)
+        else:
+            self.stream.write(line + "\n")
+        self.stream.flush()
+
+    def update(self, amount: int = 1) -> None:
+        with self._lock:
+            self.count += amount
+            self._draw()
+
+    def write(self, message: str) -> None:
+        """Print a message (such as a failure) without corrupting the bar."""
+        with self._lock:
+            if self.is_tty and self._last_len:
+                self.stream.write("\r" + " " * self._last_len + "\r")
+                self._last_len = 0
+            self.stream.write(message + "\n")
+            self.stream.flush()
+            if self.is_tty:
+                self._draw()
+
+    def close(self) -> None:
+        with self._lock:
+            if self.is_tty and self._last_len:
+                self.stream.write("\n")
+                self.stream.flush()
+                self._last_len = 0
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -443,14 +532,15 @@ def plan_topic_tasks(
 def download_tasks(
     tasks: list[DownloadTask], workers: int, label: str
 ) -> dict[object, dict]:
-    """Download every task concurrently and return {key: {status, error}}."""
+    """Download every task concurrently and return {key: {status, error}}.
+
+    Progress is shown with a single tqdm-style bar that advances as each file
+    lands; failures are written above the bar so none are lost.
+    """
     results: dict[object, dict] = {}
     total = len(tasks)
     if total == 0:
         return results
-
-    counter = {"done": 0}
-    lock = threading.Lock()
 
     def work(task: DownloadTask) -> tuple[object, str, dict]:
         try:
@@ -459,19 +549,17 @@ def download_tasks(
         except Exception as exc:  # noqa: BLE001 - recorded per task, never fatal
             return task.key, task.describe, {"status": "failed", "error": str(exc)}
 
+    bar = ProgressBar(total, label)
     worker_count = max(1, min(workers, total))
     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = [executor.submit(work, task) for task in tasks]
         for future in concurrent.futures.as_completed(futures):
             key, describe, outcome = future.result()
             results[key] = outcome
-            with lock:
-                counter["done"] += 1
-                done = counter["done"]
             if outcome["error"]:
-                log(f"  [{done}/{total}] {label} FAILED: {describe} -> {outcome['error']}")
-            else:
-                log(f"  [{done}/{total}] {outcome['status']}: {describe}")
+                bar.write(f"{label} FAILED: {describe} -> {outcome['error']}")
+            bar.update(1)
+    bar.close()
     return results
 
 
@@ -486,6 +574,7 @@ def run(output_dir: Path, workers: int | None = None) -> int:
     if workers is None:
         workers = default_workers()
     workers = max(1, workers)
+    run_start = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
     log(f"Output directory: {output_dir}")
     log(f"Download workers: {workers}")
@@ -493,6 +582,7 @@ def run(output_dir: Path, workers: int | None = None) -> int:
     topics, total = fetch_all_topics()
     names = assign_topic_names(topics)
 
+    download_start = time.monotonic()
     solicitation_tasks, solicitation_meta = plan_solicitation_tasks(topics, output_dir)
     log(f"Shared solicitation PDFs to fetch: {len(solicitation_tasks)}.")
     solicitation_results = download_tasks(
@@ -523,6 +613,7 @@ def run(output_dir: Path, workers: int | None = None) -> int:
     topic_tasks, topic_results = plan_topic_tasks(topics, names, output_dir)
     log(f"Topic PDFs to fetch: {len(topics)}.")
     topic_results.update(download_tasks(topic_tasks, workers, "topic PDF"))
+    download_seconds = time.monotonic() - download_start
 
     topic_rows = []
     downloaded = 0
@@ -591,6 +682,7 @@ def run(output_dir: Path, workers: int | None = None) -> int:
             }
         )
 
+    total_seconds = time.monotonic() - run_start
     manifest = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "outputDir": str(output_dir),
@@ -598,6 +690,8 @@ def run(output_dir: Path, workers: int | None = None) -> int:
         "searchParam": SEARCH_PARAM,
         "pageSize": PAGE_SIZE,
         "workers": workers,
+        "downloadSeconds": round(download_seconds, 2),
+        "totalSeconds": round(total_seconds, 2),
         "apiTotal": total,
         "topicsRetrieved": len(topics),
         "topicPdfsDownloaded": downloaded,
@@ -617,6 +711,8 @@ def run(output_dir: Path, workers: int | None = None) -> int:
     log(f"Topic PDFs already present: {skipped}")
     log(f"Solicitation PDFs saved: {len(solicitation_saved)}")
     log(f"Failures: {len(failures)}")
+    log(f"Download time: {format_duration(download_seconds)}")
+    log(f"Total run time: {format_duration(total_seconds)}")
     log(f"Manifest: {manifest_path}")
 
     if failures:
