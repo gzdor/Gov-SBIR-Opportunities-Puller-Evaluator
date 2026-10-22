@@ -16,16 +16,18 @@ class FrozenDateTime(datetime):
 
 
 class FakeResponse:
-    def __init__(self, payload: bytes):
+    def __init__(self, payload: bytes, max_chunk: int | None = None):
         self._payload = payload
         self._offset = 0
+        self._max_chunk = max_chunk
 
     def read(self, size=-1):
         remaining = self._payload[self._offset :]
         if size is None or size < 0:
             chunk = remaining
         else:
-            chunk = remaining[:size]
+            limit = size if self._max_chunk is None else min(size, self._max_chunk)
+            chunk = remaining[:limit]
         self._offset += len(chunk)
         return chunk
 
@@ -152,6 +154,7 @@ def test_fetch_all_topics_keeps_paging_when_a_page_is_full(monkeypatch):
 
 
 def test_download_pdf_rejects_non_pdf_and_removes_partial(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.time, "sleep", lambda *_: None)
     monkeypatch.setattr(
         main,
         "open_url",
@@ -167,7 +170,24 @@ def test_download_pdf_rejects_non_pdf_and_removes_partial(monkeypatch, tmp_path)
         raise AssertionError("non-PDF response was saved")
 
     assert not dest.exists()
-    assert not dest.with_name(dest.name + ".part").exists()
+    assert list(tmp_path.glob("*.part")) == []
+
+
+def test_download_pdf_retries_a_transient_empty_response(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.time, "sleep", lambda *_: None)
+    calls = {"n": 0}
+
+    def flaky_open(url, timeout):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return FakeResponse(b"")  # transient empty 200
+        return FakeResponse(b"%PDF-1.7\nbody")
+
+    monkeypatch.setattr(main, "open_url", flaky_open)
+    dest = tmp_path / "topic.pdf"
+    assert main.download_pdf("https://example.test/flaky", dest) == "downloaded"
+    assert calls["n"] == 2
+    assert dest.read_bytes().startswith(b"%PDF-")
 
 
 def test_download_pdf_skips_an_existing_valid_pdf(tmp_path):
@@ -261,5 +281,79 @@ def test_run_exits_with_failure_when_the_catalog_is_short(monkeypatch, tmp_path)
 
 
 def test_main_writes_to_the_requested_directory(monkeypatch, tmp_path):
-    monkeypatch.setattr(main, "run", lambda output_dir: 0 if output_dir == tmp_path.resolve() else 1)
-    assert main.main(["--output", str(tmp_path)]) == 0
+    captured = {}
+
+    def fake_run(output_dir, workers=None):
+        captured["output_dir"] = output_dir
+        captured["workers"] = workers
+        return 0 if output_dir == tmp_path.resolve() else 1
+
+    monkeypatch.setattr(main, "run", fake_run)
+    assert main.main(["--output", str(tmp_path), "--workers", "7"]) == 0
+    assert captured["workers"] == 7
+
+
+def test_default_workers_is_bounded(monkeypatch):
+    monkeypatch.setattr(main.os, "cpu_count", lambda: 1)
+    assert main.default_workers() == 5
+    monkeypatch.setattr(main.os, "cpu_count", lambda: None)
+    assert main.default_workers() == 20
+    monkeypatch.setattr(main.os, "cpu_count", lambda: 100)
+    assert main.default_workers() == 64
+    monkeypatch.setattr(main.os, "cpu_count", lambda: 8)
+    assert main.default_workers() == 40
+
+
+def test_read_exactly_handles_short_reads():
+    response = FakeResponse(b"%PDF-1.7 body", max_chunk=1)
+    assert main._read_exactly(response, 5) == b"%PDF-"
+
+
+def test_download_pdf_accepts_a_pdf_delivered_in_tiny_chunks(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        main,
+        "open_url",
+        lambda url, timeout: FakeResponse(b"%PDF-1.7\n" + b"x" * 100, max_chunk=1),
+    )
+    dest = tmp_path / "topic.pdf"
+    assert main.download_pdf("https://example.test/ok", dest) == "downloaded"
+    assert dest.read_bytes().startswith(b"%PDF-")
+
+
+def test_plan_topic_tasks_presets_failure_for_bad_topic_id(tmp_path):
+    topics = [topic(0, topicId="bad id with spaces"), topic(1)]
+    names = main.assign_topic_names(topics)
+    tasks, preset = main.plan_topic_tasks(topics, names, tmp_path)
+    assert [task.key for task in tasks] == ["topic1"]
+    assert preset["bad id with spaces"]["status"] == "failed"
+
+
+def test_download_tasks_runs_concurrently_and_records_failures(monkeypatch, tmp_path):
+    monkeypatch.setattr(main.time, "sleep", lambda *_: None)
+
+    def fake_open(url, timeout):
+        if "bad" in url:
+            return FakeResponse(b"<html>denied</html>")
+        return FakeResponse(b"%PDF-1.4\n" + url.encode("ascii"))
+
+    monkeypatch.setattr(main, "open_url", fake_open)
+    tasks = [
+        main.DownloadTask(key="ok", url="https://x/ok", dest=tmp_path / "ok.pdf", describe="ok"),
+        main.DownloadTask(key="bad", url="https://x/bad", dest=tmp_path / "bad.pdf", describe="bad"),
+    ]
+    results = main.download_tasks(tasks, workers=8, label="test")
+    assert results["ok"]["status"] == "downloaded"
+    assert results["bad"]["status"] == "failed"
+    assert (tmp_path / "ok.pdf").exists()
+    assert not (tmp_path / "bad.pdf").exists()
+
+
+def test_run_records_worker_count_in_manifest(monkeypatch, tmp_path):
+    monkeypatch.setattr(main, "REQUEST_PAUSE_SECONDS", 0)
+    monkeypatch.setattr(
+        main, "search_page", lambda page: {"total": 1, "data": [topic(0)]} if page == 0 else {"total": 1, "data": []}
+    )
+    monkeypatch.setattr(main, "open_url", lambda url, timeout: FakeResponse(b"%PDF-1.4\n"))
+    assert main.run(tmp_path, workers=3) == 0
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["workers"] == 3

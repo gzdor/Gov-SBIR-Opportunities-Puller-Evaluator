@@ -4,18 +4,26 @@
 The DSIP topics app loads that catalog from a paginated JSON search. This
 script follows the same search, reads the reported total, and saves one topic
 PDF per record plus the shared solicitation PDFs attached to those records.
+
+Downloads are network and disk bound, so they run on a thread pool. Threads
+(not processes) are used because the work is I/O bound: Python releases the GIL
+during socket and file I/O, and threads avoid the pickling and start-up cost of
+processes while sharing one HTTP connection pool per worker.
 """
 
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 import re
 import sys
+import threading
 import time
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
@@ -48,7 +56,9 @@ SEARCH_PARAM = {
 PAGE_SIZE = 100
 MAX_PAGES = 1000
 REQUEST_PAUSE_SECONDS = 0.2
+DOWNLOAD_ATTEMPTS = 3
 RETRYABLE_STATUS = {429, 500, 502, 503, 504}
+TOPIC_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -57,6 +67,24 @@ HEADERS = {
     "Accept": "*/*",
 }
 INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+
+_print_lock = threading.Lock()
+
+
+def default_workers() -> int:
+    """Pick a thread count that saturates the download without flooding the host.
+
+    Downloads are I/O bound, so more threads than CPUs helps. The count scales
+    with the machine and is capped so a large box does not open an unreasonable
+    number of simultaneous connections to one government server.
+    """
+    cpus = os.cpu_count() or 4
+    return max(4, min(64, cpus * 5))
+
+
+def log(message: str) -> None:
+    with _print_lock:
+        print(message, flush=True)
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -75,6 +103,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Directory for the PDFs and manifest.json. "
             "Default: a new all_dsip_opportunities_YYYYMMDD_HHMMSS folder "
             "in the repository root."
+        ),
+    )
+    parser.add_argument(
+        "-j",
+        "--workers",
+        type=int,
+        default=default_workers(),
+        help=(
+            "Number of concurrent download threads. "
+            f"Default scales with this machine: {default_workers()}."
         ),
     )
     return parser.parse_args(argv)
@@ -110,6 +148,10 @@ def epoch_ms_to_iso(value: object) -> str | None:
     if not isinstance(value, (int, float)):
         return None
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+
+
+def relpath(path: Path, base: Path) -> str:
+    return str(path.relative_to(base)).replace("\\", "/")
 
 
 def open_url(url: str, timeout: int) -> object:
@@ -154,7 +196,11 @@ def search_page(page: int) -> dict:
 
 
 def fetch_all_topics() -> tuple[list[dict], int]:
-    """Return every open-topic record and the total reported by the API."""
+    """Return every open-topic record and the total reported by the API.
+
+    Pagination has to be sequential because each page depends on the previous
+    page number, but this is fast: it is one small JSON request per 100 topics.
+    """
     topics: list[dict] = []
     seen: set[str] = set()
     total: int | None = None
@@ -164,7 +210,7 @@ def fetch_all_topics() -> tuple[list[dict], int]:
         if total is None:
             reported = payload.get("total", 0)
             total = int(reported) if isinstance(reported, int) else 0
-            print(f"DSIP open-topics catalog reports {total} topic(s).")
+            log(f"DSIP open-topics catalog reports {total} topic(s).")
         items = payload.get("data") or []
         if not isinstance(items, list):
             raise RuntimeError("Search response did not include a data list.")
@@ -177,7 +223,7 @@ def fetch_all_topics() -> tuple[list[dict], int]:
             seen.add(topic_id)
             fresh.append(item)
         topics.extend(fresh)
-        print(
+        log(
             f"Page {page}: received {len(items)} record(s), "
             f"{len(topics)} of {total} collected."
         )
@@ -202,36 +248,76 @@ def is_valid_pdf(path: Path) -> bool:
         return handle.read(5) == b"%PDF-"
 
 
+def _read_exactly(response: object, count: int) -> bytes:
+    """Read exactly count bytes unless the stream ends first.
+
+    A single response.read(n) can legally return fewer than n bytes, so the
+    PDF magic-number check must not assume the first read fills the buffer.
+    """
+    chunks: list[bytes] = []
+    remaining = count
+    while remaining > 0:
+        chunk = response.read(remaining)
+        if not chunk:
+            break
+        chunks.append(chunk)
+        remaining -= len(chunk)
+    return b"".join(chunks)
+
+
+def _attempt_download(url: str, partial: Path) -> None:
+    """Stream one response to the partial file or raise if it is not a PDF.
+
+    Under heavy concurrency the DSIP server sometimes answers a valid request
+    with an empty or non-PDF body, so the caller retries this on failure.
+    """
+    with open_url(url, timeout=180) as response:
+        header = _read_exactly(response, 5)
+        if header != b"%PDF-":
+            extra = response.read(240)
+            preview = (header + extra)[:240]
+            raise RuntimeError(f"Expected a PDF from {url}, received {preview!r}")
+        with partial.open("wb") as handle:
+            handle.write(header)
+            while True:
+                chunk = response.read(64 * 1024)
+                if not chunk:
+                    break
+                handle.write(chunk)
+
+
 def download_pdf(url: str, dest: Path) -> str:
-    """Save url to dest. Return 'skipped' or 'downloaded'."""
+    """Save url to dest. Return 'skipped' or 'downloaded'.
+
+    Retries transient empty/non-PDF responses, which the HTTP-status retry in
+    open_url cannot catch because they arrive as a successful 200.
+    """
     if is_valid_pdf(dest):
         return "skipped"
 
     dest.parent.mkdir(parents=True, exist_ok=True)
-    partial = dest.with_name(dest.name + ".part")
-    try:
-        with open_url(url, timeout=180) as response:
-            header = response.read(5)
-            if header != b"%PDF-":
-                extra = response.read(240)
-                preview = (header + extra)[:240]
-                raise RuntimeError(f"Expected a PDF from {url}, received {preview!r}")
-            with partial.open("wb") as handle:
-                handle.write(header)
-                while True:
-                    chunk = response.read(64 * 1024)
-                    if not chunk:
-                        break
-                    handle.write(chunk)
-        os.replace(partial, dest)
-    except Exception:
-        if partial.exists():
-            partial.unlink()
-        raise
-
-    if not is_valid_pdf(dest):
-        raise RuntimeError(f"Saved file is not a PDF: {dest}")
-    return "downloaded"
+    # Make the temp name unique per thread so concurrent downloads of distinct
+    # destinations never collide on a shared .part file.
+    partial = dest.with_name(f"{dest.name}.{threading.get_ident()}.part")
+    last_error: Exception | None = None
+    for attempt in range(1, DOWNLOAD_ATTEMPTS + 1):
+        try:
+            _attempt_download(url, partial)
+            os.replace(partial, dest)
+            if not is_valid_pdf(dest):
+                raise RuntimeError(f"Saved file is not a PDF: {dest}")
+            return "downloaded"
+        except Exception as exc:  # noqa: BLE001 - retried below, re-raised if final
+            last_error = exc
+            if partial.exists():
+                partial.unlink()
+            if attempt < DOWNLOAD_ATTEMPTS:
+                time.sleep(attempt)
+        except BaseException:
+            if partial.exists():
+                partial.unlink()
+            raise
+    raise last_error if last_error else RuntimeError(f"Failed to download {url}")
 
 
 def solicitation_documents(topic: dict) -> list[dict]:
@@ -261,6 +347,7 @@ def solicitation_documents(topic: dict) -> list[dict]:
 
 
 def assign_topic_names(topics: list[dict]) -> dict[str, str]:
+    """Pick one unique PDF filename per topic, resolved before any threads run."""
     claimed: set[str] = set()
     names: dict[str, str] = {}
     for topic in topics:
@@ -279,21 +366,32 @@ def assign_topic_names(topics: list[dict]) -> dict[str, str]:
     return names
 
 
-def download_solicitation_files(
+@dataclass
+class DownloadTask:
+    key: object
+    url: str
+    dest: Path
+    describe: str
+
+
+def plan_solicitation_tasks(
     topics: list[dict], output_dir: Path
-) -> tuple[dict[object, dict], list[dict]]:
+) -> tuple[list[DownloadTask], dict[object, dict]]:
+    """Build one download task per distinct solicitation upload.
+
+    Filenames are assigned here, single-threaded, so concurrent workers never
+    race to claim the same name.
+    """
     directory = output_dir / "solicitation_documents"
-    saved: dict[object, dict] = {}
-    failures: list[dict] = []
     unique: dict[object, dict] = {}
     for topic in topics:
         for document in solicitation_documents(topic):
             unique.setdefault(document["upload_id"], document)
 
-    print(f"Shared solicitation PDFs to fetch: {len(unique)}.")
+    tasks: list[DownloadTask] = []
+    meta: dict[object, dict] = {}
     used_names: set[str] = set()
-    for index, document in enumerate(unique.values(), start=1):
-        upload_id = document["upload_id"]
+    for upload_id, document in unique.items():
         filename = safe_filename(document["file_name"], max_len=160)
         if not filename.lower().endswith(".pdf"):
             filename = f"{filename}.pdf"
@@ -301,30 +399,80 @@ def download_solicitation_files(
             filename = f"{Path(filename).stem}_{upload_id}.pdf"
         used_names.add(filename.lower())
         dest = directory / filename
-        url = UPLOAD_PDF_URL.format(upload_id=upload_id)
-        print(f"  [{index}/{len(unique)}] {filename}")
-        try:
-            status = download_pdf(url, dest)
-        except Exception as exc:
-            print(f"    failed: {exc}")
-            failures.append(
-                {
-                    "kind": "solicitation_document",
-                    "upload_id": upload_id,
-                    "file_name": filename,
-                    "error": str(exc),
-                }
+        tasks.append(
+            DownloadTask(
+                key=upload_id,
+                url=UPLOAD_PDF_URL.format(upload_id=upload_id),
+                dest=dest,
+                describe=filename,
             )
-            continue
-        print(f"    {status}: {dest.relative_to(output_dir)}")
-        saved[upload_id] = {
+        )
+        meta[upload_id] = {
             "upload_id": upload_id,
             "kind": document["kind"],
-            "path": str(dest.relative_to(output_dir)).replace("\\", "/"),
-            "status": status,
+            "path": relpath(dest, output_dir),
         }
-        time.sleep(REQUEST_PAUSE_SECONDS)
-    return saved, failures
+    return tasks, meta
+
+
+def plan_topic_tasks(
+    topics: list[dict], names: dict[str, str], output_dir: Path
+) -> tuple[list[DownloadTask], dict[object, dict]]:
+    tasks: list[DownloadTask] = []
+    preset: dict[object, dict] = {}
+    for topic in topics:
+        topic_id = str(topic["topicId"])
+        describe = str(topic.get("topicCode") or topic_id)
+        if not TOPIC_ID_PATTERN.fullmatch(topic_id):
+            preset[topic_id] = {
+                "status": "failed",
+                "error": f"Unexpected topic id: {topic_id}",
+            }
+            continue
+        tasks.append(
+            DownloadTask(
+                key=topic_id,
+                url=TOPIC_PDF_URL.format(topic_id=topic_id),
+                dest=output_dir / names[topic_id],
+                describe=describe,
+            )
+        )
+    return tasks, preset
+
+
+def download_tasks(
+    tasks: list[DownloadTask], workers: int, label: str
+) -> dict[object, dict]:
+    """Download every task concurrently and return {key: {status, error}}."""
+    results: dict[object, dict] = {}
+    total = len(tasks)
+    if total == 0:
+        return results
+
+    counter = {"done": 0}
+    lock = threading.Lock()
+
+    def work(task: DownloadTask) -> tuple[object, str, dict]:
+        try:
+            status = download_pdf(task.url, task.dest)
+            return task.key, task.describe, {"status": status, "error": None}
+        except Exception as exc:  # noqa: BLE001 - recorded per task, never fatal
+            return task.key, task.describe, {"status": "failed", "error": str(exc)}
+
+    worker_count = max(1, min(workers, total))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
+        futures = [executor.submit(work, task) for task in tasks]
+        for future in concurrent.futures.as_completed(futures):
+            key, describe, outcome = future.result()
+            results[key] = outcome
+            with lock:
+                counter["done"] += 1
+                done = counter["done"]
+            if outcome["error"]:
+                log(f"  [{done}/{total}] {label} FAILED: {describe} -> {outcome['error']}")
+            else:
+                log(f"  [{done}/{total}] {outcome['status']}: {describe}")
+    return results
 
 
 def write_manifest(path: Path, payload: dict) -> None:
@@ -334,49 +482,69 @@ def write_manifest(path: Path, payload: dict) -> None:
     )
 
 
-def run(output_dir: Path) -> int:
+def run(output_dir: Path, workers: int | None = None) -> int:
+    if workers is None:
+        workers = default_workers()
+    workers = max(1, workers)
     output_dir.mkdir(parents=True, exist_ok=True)
-    print(f"Output directory: {output_dir}")
+    log(f"Output directory: {output_dir}")
+    log(f"Download workers: {workers}")
 
     topics, total = fetch_all_topics()
     names = assign_topic_names(topics)
-    solicitation_saved, failures = download_solicitation_files(topics, output_dir)
+
+    solicitation_tasks, solicitation_meta = plan_solicitation_tasks(topics, output_dir)
+    log(f"Shared solicitation PDFs to fetch: {len(solicitation_tasks)}.")
+    solicitation_results = download_tasks(
+        solicitation_tasks, workers, "solicitation PDF"
+    )
+
+    solicitation_saved: dict[object, dict] = {}
+    failures: list[dict] = []
+    for upload_id, meta in solicitation_meta.items():
+        outcome = solicitation_results.get(upload_id, {})
+        if outcome.get("error"):
+            failures.append(
+                {
+                    "kind": "solicitation_document",
+                    "upload_id": upload_id,
+                    "file_name": Path(meta["path"]).name,
+                    "error": outcome["error"],
+                }
+            )
+            continue
+        solicitation_saved[upload_id] = {
+            "upload_id": upload_id,
+            "kind": meta["kind"],
+            "path": meta["path"],
+            "status": outcome.get("status", "failed"),
+        }
+
+    topic_tasks, topic_results = plan_topic_tasks(topics, names, output_dir)
+    log(f"Topic PDFs to fetch: {len(topics)}.")
+    topic_results.update(download_tasks(topic_tasks, workers, "topic PDF"))
 
     topic_rows = []
     downloaded = 0
     skipped = 0
-    print(f"Topic PDFs to fetch: {len(topics)}.")
-    for index, topic in enumerate(topics, start=1):
+    for topic in topics:
         topic_id = str(topic["topicId"])
-        filename = names[topic_id]
-        dest = output_dir / filename
-        code = topic.get("topicCode") or topic_id
-        title = topic.get("topicTitle") or ""
-        print(f"[{index}/{len(topics)}] {code}  {title}")
-        status = "failed"
-        error = None
-        try:
-            if not re.fullmatch(r"[A-Za-z0-9_-]+", topic_id):
-                raise RuntimeError(f"Unexpected topic id: {topic_id}")
-            status = download_pdf(TOPIC_PDF_URL.format(topic_id=topic_id), dest)
-        except Exception as exc:
-            error = str(exc)
-            print(f"  failed: {exc}")
+        outcome = topic_results.get(topic_id, {"status": "failed", "error": "No result"})
+        status = outcome.get("status", "failed")
+        error = outcome.get("error")
+        if error:
             failures.append(
                 {
                     "kind": "topic_pdf",
                     "topic_id": topic_id,
-                    "topic_code": code,
+                    "topic_code": topic.get("topicCode") or topic_id,
                     "error": error,
                 }
             )
+        elif status == "downloaded":
+            downloaded += 1
         else:
-            print(f"  {status}: {filename}")
-            if status == "downloaded":
-                downloaded += 1
-            else:
-                skipped += 1
-            time.sleep(REQUEST_PAUSE_SECONDS)
+            skipped += 1
 
         attached = []
         for document in solicitation_documents(topic):
@@ -405,15 +573,14 @@ def run(output_dir: Path) -> int:
                 "topicPreReleaseEndDate": epoch_ms_to_iso(
                     topic.get("topicPreReleaseEndDate")
                 ),
-                "pdf": None if error else filename,
+                "pdf": None if error else names[topic_id],
                 "pdfStatus": status,
                 "pdfError": error,
                 "solicitationDocuments": attached,
             }
         )
 
-    shortfall = max(total - len(topics), 0)
-    if shortfall:
+    if total - len(topics) > 0:
         failures.append(
             {
                 "kind": "catalog",
@@ -430,6 +597,7 @@ def run(output_dir: Path) -> int:
         "source": SEARCH_URL,
         "searchParam": SEARCH_PARAM,
         "pageSize": PAGE_SIZE,
+        "workers": workers,
         "apiTotal": total,
         "topicsRetrieved": len(topics),
         "topicPdfsDownloaded": downloaded,
@@ -442,19 +610,19 @@ def run(output_dir: Path) -> int:
     manifest_path = output_dir / "manifest.json"
     write_manifest(manifest_path, manifest)
 
-    print("")
-    print(f"API total: {total}")
-    print(f"Topics retrieved: {len(topics)}")
-    print(f"Topic PDFs downloaded: {downloaded}")
-    print(f"Topic PDFs already present: {skipped}")
-    print(f"Solicitation PDFs saved: {len(solicitation_saved)}")
-    print(f"Failures: {len(failures)}")
-    print(f"Manifest: {manifest_path}")
+    log("")
+    log(f"API total: {total}")
+    log(f"Topics retrieved: {len(topics)}")
+    log(f"Topic PDFs downloaded: {downloaded}")
+    log(f"Topic PDFs already present: {skipped}")
+    log(f"Solicitation PDFs saved: {len(solicitation_saved)}")
+    log(f"Failures: {len(failures)}")
+    log(f"Manifest: {manifest_path}")
 
     if failures:
-        print("Completed with failures. See manifest.json.")
+        log("Completed with failures. See manifest.json.")
         return 1
-    print("Finished. Every reported topic was retrieved.")
+    log("Finished. Every reported topic was retrieved.")
     return 0
 
 
@@ -466,7 +634,7 @@ def main(argv: list[str] | None = None) -> int:
         else default_output_dir()
     )
     try:
-        return run(output_dir)
+        return run(output_dir, args.workers)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         return 130

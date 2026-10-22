@@ -221,3 +221,6 @@ __marimo__/
 
 # Local DSIP downloads (default output of main.py)
 all_dsip_opportunities_*/
+
+# Notebook output folder (default of DSIP_portal_ai_query_tool.ipynb)
+notebook_outputs/
