@@ -218,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local DSIP downloads (default output of main.py)
+all_dsip_opportunities_*/

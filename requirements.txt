@@ -1,0 +1,21 @@
+# Dependencies imported or installed by DSIP_portal_ai_query_tool.ipynb.
+# main.py uses the Python standard library only. Install this file when you
+# want to re-run the notebook's browser, scraping, or chatbot cells.
+
+# Notebook install cell
+browser-use
+langchain-google-genai
+playwright
+nest_asyncio
+ipywidgets
+
+# Imported by the inspection and API cells
+beautifulsoup4
+requests
+
+# Local Jupyter runtime for the notebook
+jupyter
+ipython
+
+# Tests in test/
+pytest
