@@ -4,6 +4,16 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 `main.py` is the command-line script to run, and `gui.py` is a one-click desktop app built on top of it; both use only the Python standard library. The app can also be packaged into a standalone Windows `.exe` (see [Building the Windows executable](#building-the-windows-executable)). `DSIP_portal_ai_query_tool.ipynb` is the Colab notebook that found the DSIP search API and the download buttons; it is kept as the research log.
 
+## What it looks like
+
+Pick a folder, click one button, and watch the download complete. The app reports live progress, a per-run summary (counts plus download and total run time), and where everything was saved:
+
+![DSIP Opportunities Downloader desktop app after a completed run](docs/images/app-window.png)
+
+Every open topic is saved as its own PDF in a timestamped folder, alongside a `manifest.json` and a `solicitation_documents/` subfolder of the shared solicitation PDFs:
+
+![The timestamped output folder with one PDF per topic, a manifest, and a solicitation_documents subfolder](docs/images/output-folder.png)
+
 ## Topic PDFs vs. solicitation documents
 
 The downloader saves two kinds of PDF, which play different roles. Understanding the distinction makes the output directory easy to navigate.
