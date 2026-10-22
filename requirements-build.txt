@@ -1,0 +1,6 @@
+# Build-only dependencies for packaging the desktop app into an executable.
+# Not needed to run main.py or gui.py from source (those use the stdlib only).
+#
+#   pip install -r requirements-build.txt
+#   pyinstaller DSIP_Downloader.spec
+pyinstaller>=6.0

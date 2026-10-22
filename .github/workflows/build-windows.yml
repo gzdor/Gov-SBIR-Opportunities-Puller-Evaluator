@@ -1,0 +1,82 @@
+name: Build Windows app
+
+# Builds the Windows desktop executable on every push to main and publishes it
+# to a GitHub Release so it is downloadable as a .exe. Also runs on manual
+# dispatch and on version tags (v*).
+#
+# RUNNER CHOICE
+# -------------
+# This uses GitHub's hosted Windows runner (runs-on: windows-latest), which
+# needs no setup: pushing a commit just works. If you would rather build on
+# your OWN machine ("local" / self-hosted runner), install the GitHub Actions
+# runner on your PC (repo Settings -> Actions -> Runners -> New self-hosted
+# runner), then change `runs-on: windows-latest` below to:
+#     runs-on: [self-hosted, windows]
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to create/update the Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-build.txt
+          pip install pytest
+
+      - name: Run tests
+        run: python -m pytest -q
+
+      - name: Build the executable
+        run: python -m PyInstaller --noconfirm --clean DSIP_Downloader.spec
+
+      - name: Smoke-test the executable (best effort)
+        continue-on-error: true
+        run: |
+          .\dist\DSIP_Downloader.exe --selftest
+          if (Test-Path "$env:TEMP\dsip_selftest_ok.txt") {
+            Write-Host "Self-test OK"
+          } else {
+            Write-Host "Self-test sentinel not found (no desktop session?)"
+          }
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSIP_Downloader-windows
+          path: dist/DSIP_Downloader.exe
+          if-no-files-found: error
+
+      # Publish a rolling "latest" prerelease on pushes to main so there is a
+      # stable download link, and a normal release when you push a v* tag.
+      - name: Publish rolling latest release (main)
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Latest Windows build
+          prerelease: true
+          files: dist/DSIP_Downloader.exe
+
+      - name: Publish tagged release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/DSIP_Downloader.exe

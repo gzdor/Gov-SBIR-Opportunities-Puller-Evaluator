@@ -176,6 +176,36 @@ class ProgressBar:
                 self._last_len = 0
 
 
+class ConsoleReporter:
+    """Default progress sink: status lines + a terminal ProgressBar per phase.
+
+    The downloader reports progress through a reporter object instead of
+    printing directly, so a GUI (or any other front end) can receive the same
+    events. This console implementation preserves the original CLI output.
+    """
+
+    def __init__(self) -> None:
+        self._bar: ProgressBar | None = None
+
+    def status(self, message: str) -> None:
+        log(message)
+
+    def start_phase(self, label: str, total: int) -> None:
+        self._bar = ProgressBar(total, label)
+
+    def advance(self, done: int, total: int, failure: str | None = None) -> None:
+        if self._bar is None:
+            return
+        if failure:
+            self._bar.write(failure)
+        self._bar.update(1)
+
+    def end_phase(self) -> None:
+        if self._bar is not None:
+            self._bar.close()
+            self._bar = None
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -207,16 +237,25 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def default_output_dir() -> Path:
+def timestamped_dir(parent: Path) -> Path:
+    """Return a new all_dsip_opportunities_YYYYMMDD_HHMMSS folder under parent.
+
+    Used by the CLI (default in the repo root) and the GUI (inside whatever
+    folder the user picks), so both place their output the same way.
+    """
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    candidate = REPO_ROOT / f"all_dsip_opportunities_{stamp}"
+    candidate = parent / f"all_dsip_opportunities_{stamp}"
     if not candidate.exists():
         return candidate
     for suffix in range(2, 1000):
-        alternate = REPO_ROOT / f"all_dsip_opportunities_{stamp}_{suffix}"
+        alternate = parent / f"all_dsip_opportunities_{stamp}_{suffix}"
         if not alternate.exists():
             return alternate
     raise RuntimeError("Could not allocate a timestamped output directory.")
+
+
+def default_output_dir() -> Path:
+    return timestamped_dir(REPO_ROOT)
 
 
 def safe_filename(name: str, max_len: int = 140) -> str:
@@ -284,12 +323,13 @@ def search_page(page: int) -> dict:
     return fetch_json(f"{SEARCH_URL}?{query}")
 
 
-def fetch_all_topics() -> tuple[list[dict], int]:
+def fetch_all_topics(reporter: "ConsoleReporter | None" = None) -> tuple[list[dict], int]:
     """Return every open-topic record and the total reported by the API.
 
     Pagination has to be sequential because each page depends on the previous
     page number, but this is fast: it is one small JSON request per 100 topics.
     """
+    reporter = reporter or ConsoleReporter()
     topics: list[dict] = []
     seen: set[str] = set()
     total: int | None = None
@@ -299,7 +339,7 @@ def fetch_all_topics() -> tuple[list[dict], int]:
         if total is None:
             reported = payload.get("total", 0)
             total = int(reported) if isinstance(reported, int) else 0
-            log(f"DSIP open-topics catalog reports {total} topic(s).")
+            reporter.status(f"DSIP open-topics catalog reports {total} topic(s).")
         items = payload.get("data") or []
         if not isinstance(items, list):
             raise RuntimeError("Search response did not include a data list.")
@@ -312,7 +352,7 @@ def fetch_all_topics() -> tuple[list[dict], int]:
             seen.add(topic_id)
             fresh.append(item)
         topics.extend(fresh)
-        log(
+        reporter.status(
             f"Page {page}: received {len(items)} record(s), "
             f"{len(topics)} of {total} collected."
         )
@@ -530,13 +570,18 @@ def plan_topic_tasks(
 
 
 def download_tasks(
-    tasks: list[DownloadTask], workers: int, label: str
+    tasks: list[DownloadTask],
+    workers: int,
+    label: str,
+    reporter: "ConsoleReporter | None" = None,
 ) -> dict[object, dict]:
     """Download every task concurrently and return {key: {status, error}}.
 
-    Progress is shown with a single tqdm-style bar that advances as each file
-    lands; failures are written above the bar so none are lost.
+    Progress is reported through the reporter, which drives the terminal bar on
+    the CLI or the progress bar in the GUI. Failures are reported per item so
+    none are lost.
     """
+    reporter = reporter or ConsoleReporter()
     results: dict[object, dict] = {}
     total = len(tasks)
     if total == 0:
@@ -549,17 +594,20 @@ def download_tasks(
         except Exception as exc:  # noqa: BLE001 - recorded per task, never fatal
             return task.key, task.describe, {"status": "failed", "error": str(exc)}
 
-    bar = ProgressBar(total, label)
+    reporter.start_phase(label, total)
     worker_count = max(1, min(workers, total))
+    done = 0
     with concurrent.futures.ThreadPoolExecutor(max_workers=worker_count) as executor:
         futures = [executor.submit(work, task) for task in tasks]
         for future in concurrent.futures.as_completed(futures):
             key, describe, outcome = future.result()
             results[key] = outcome
+            done += 1
+            failure = None
             if outcome["error"]:
-                bar.write(f"{label} FAILED: {describe} -> {outcome['error']}")
-            bar.update(1)
-    bar.close()
+                failure = f"{label} FAILED: {describe} -> {outcome['error']}"
+            reporter.advance(done, total, failure)
+    reporter.end_phase()
     return results
 
 
@@ -570,23 +618,28 @@ def write_manifest(path: Path, payload: dict) -> None:
     )
 
 
-def run(output_dir: Path, workers: int | None = None) -> int:
+def run(
+    output_dir: Path,
+    workers: int | None = None,
+    reporter: "ConsoleReporter | None" = None,
+) -> int:
+    reporter = reporter or ConsoleReporter()
     if workers is None:
         workers = default_workers()
     workers = max(1, workers)
     run_start = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
-    log(f"Output directory: {output_dir}")
-    log(f"Download workers: {workers}")
+    reporter.status(f"Output directory: {output_dir}")
+    reporter.status(f"Download workers: {workers}")
 
-    topics, total = fetch_all_topics()
+    topics, total = fetch_all_topics(reporter)
     names = assign_topic_names(topics)
 
     download_start = time.monotonic()
     solicitation_tasks, solicitation_meta = plan_solicitation_tasks(topics, output_dir)
-    log(f"Shared solicitation PDFs to fetch: {len(solicitation_tasks)}.")
+    reporter.status(f"Shared solicitation PDFs to fetch: {len(solicitation_tasks)}.")
     solicitation_results = download_tasks(
-        solicitation_tasks, workers, "solicitation PDF"
+        solicitation_tasks, workers, "solicitation PDF", reporter
     )
 
     solicitation_saved: dict[object, dict] = {}
@@ -611,8 +664,8 @@ def run(output_dir: Path, workers: int | None = None) -> int:
         }
 
     topic_tasks, topic_results = plan_topic_tasks(topics, names, output_dir)
-    log(f"Topic PDFs to fetch: {len(topics)}.")
-    topic_results.update(download_tasks(topic_tasks, workers, "topic PDF"))
+    reporter.status(f"Topic PDFs to fetch: {len(topics)}.")
+    topic_results.update(download_tasks(topic_tasks, workers, "topic PDF", reporter))
     download_seconds = time.monotonic() - download_start
 
     topic_rows = []
@@ -704,21 +757,21 @@ def run(output_dir: Path, workers: int | None = None) -> int:
     manifest_path = output_dir / "manifest.json"
     write_manifest(manifest_path, manifest)
 
-    log("")
-    log(f"API total: {total}")
-    log(f"Topics retrieved: {len(topics)}")
-    log(f"Topic PDFs downloaded: {downloaded}")
-    log(f"Topic PDFs already present: {skipped}")
-    log(f"Solicitation PDFs saved: {len(solicitation_saved)}")
-    log(f"Failures: {len(failures)}")
-    log(f"Download time: {format_duration(download_seconds)}")
-    log(f"Total run time: {format_duration(total_seconds)}")
-    log(f"Manifest: {manifest_path}")
+    reporter.status("")
+    reporter.status(f"API total: {total}")
+    reporter.status(f"Topics retrieved: {len(topics)}")
+    reporter.status(f"Topic PDFs downloaded: {downloaded}")
+    reporter.status(f"Topic PDFs already present: {skipped}")
+    reporter.status(f"Solicitation PDFs saved: {len(solicitation_saved)}")
+    reporter.status(f"Failures: {len(failures)}")
+    reporter.status(f"Download time: {format_duration(download_seconds)}")
+    reporter.status(f"Total run time: {format_duration(total_seconds)}")
+    reporter.status(f"Manifest: {manifest_path}")
 
     if failures:
-        log("Completed with failures. See manifest.json.")
+        reporter.status("Completed with failures. See manifest.json.")
         return 1
-    log("Finished. Every reported topic was retrieved.")
+    reporter.status("Finished. Every reported topic was retrieved.")
     return 0
 
 

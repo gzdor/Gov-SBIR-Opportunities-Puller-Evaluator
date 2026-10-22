@@ -2,7 +2,7 @@
 
 Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dodsbirsttr.mil/topics-app/) to disk: one topic-detail PDF per topic, the shared solicitation PDFs attached to those topics, and a `manifest.json` that lists every record the API returned. Downloads run concurrently on a thread pool.
 
-`main.py` is the script to run. It uses only the Python standard library. `DSIP_portal_ai_query_tool.ipynb` is the Colab notebook that found the DSIP search API and the download buttons; it is kept as the research log.
+`main.py` is the command-line script to run, and `gui.py` is a one-click desktop app built on top of it; both use only the Python standard library. The app can also be packaged into a standalone Windows `.exe` (see [Building the Windows executable](#building-the-windows-executable)). `DSIP_portal_ai_query_tool.ipynb` is the Colab notebook that found the DSIP search API and the download buttons; it is kept as the research log.
 
 ## Topic PDFs vs. solicitation documents
 
@@ -207,6 +207,54 @@ python main.py --workers 16
 ```
 
 A relative `--output` path is resolved from the current working directory. The folder is created if it does not exist. Files that are already valid PDFs in that folder are left in place, so a second run into the same directory resumes.
+
+## Desktop app (GUI)
+
+For a point-and-click experience there is a small desktop app, `gui.py`, built with Tkinter (which ships with Python, so it adds no third-party runtime dependency). It does exactly three things:
+
+1. **Pick a folder** to save into (defaults to your `Downloads` folder).
+2. Click **Download all opportunities**.
+3. Watch a **progress bar** fill as the PDFs land, then open the result folder.
+
+The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder inside the folder you chose and writes the PDFs and `manifest.json` there — the same layout as the CLI. The download runs on a background thread so the window stays responsive; all the actual work is done by `main.py`, which the GUI drives through its progress-reporter interface (no duplicated logic).
+
+Run it from source:
+
+```bat
+python gui.py
+```
+
+Non-technical users do not need Python at all — see the packaged `.exe` below.
+
+## Building the Windows executable
+
+The app can be packaged into a single, self-contained `DSIP_Downloader.exe` (no Python install required on the target machine) with [PyInstaller](https://pyinstaller.org/). The build configuration lives in `DSIP_Downloader.spec`.
+
+```bat
+call conda activate dsip-opportunities
+pip install -r requirements-build.txt
+pyinstaller --noconfirm --clean DSIP_Downloader.spec
+```
+
+The executable is written to `dist\DSIP_Downloader.exe` (~14 MB; the Python runtime and Tkinter are bundled inside). Double-click it to run, or smoke-test it from a shell:
+
+```bat
+dist\DSIP_Downloader.exe --selftest
+```
+
+`--selftest` builds and tears down the window, writes a sentinel file to `%TEMP%\dsip_selftest_ok.txt`, and exits `0` — a quick way to confirm the frozen app initializes.
+
+Notes:
+
+- **Build on Windows for Windows.** PyInstaller is not a cross-compiler; a Windows `.exe` must be built on Windows (or a Windows CI runner). macOS is out of scope for now.
+- **Conda Tcl/Tk 9.** On conda, the Tcl/Tk 9 runtime DLLs live in `<env>\Library\bin`, which PyInstaller does not scan by default. The spec locates and bundles them explicitly, so the frozen app can load Tkinter.
+- **SmartScreen.** An unsigned `.exe` triggers a "Windows protected your PC" prompt the first time (click *More info -> Run anyway*). Removing that warning requires a code-signing certificate.
+
+## Automated builds (GitHub Actions)
+
+`.github/workflows/build-windows.yml` builds the `.exe` automatically. On every push to `main` it runs the test suite, builds `DSIP_Downloader.exe` on a Windows runner, uploads it as a workflow artifact, and publishes it to a rolling **Latest Windows build** prerelease so there is always a stable download link on the repo's Releases page. Pushing a version tag (`v1.2.3`) publishes a normal, permanent release instead.
+
+By default the workflow uses GitHub's hosted Windows runner (`runs-on: windows-latest`), which needs no setup. To build on your **own machine** instead, register a self-hosted runner (repo *Settings -> Actions -> Runners -> New self-hosted runner*) and change that line to `runs-on: [self-hosted, windows]`.
 
 ## Concurrency and performance
 

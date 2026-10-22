@@ -219,6 +219,10 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# Keep the committed PyInstaller build spec for the desktop app
+# (the generic *.spec ignore above would otherwise exclude it).
+!DSIP_Downloader.spec
+
 # Local DSIP downloads (default output of main.py)
 all_dsip_opportunities_*/
 
