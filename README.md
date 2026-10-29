@@ -14,21 +14,11 @@ Every open topic is saved as its own PDF in a timestamped folder, alongside a `m
 
 ![The timestamped output folder with one PDF per topic, a manifest, and a solicitation_documents subfolder](docs/images/output-folder.png)
 
-## Download for Windows (no Python needed)
+## The Windows desktop app
 
-The easiest way to use this tool is the prebuilt Windows app. **You do not need Python or anything else installed** — the Python runtime, Tkinter, and every dependency are bundled inside one file. There is nothing to install.
+This project ships a single-file Windows desktop app, `DSIP_Downloader.exe`, built from `gui.py` with PyInstaller. It bundles the Python runtime, Tkinter, and every dependency into one portable file — **no Python or other install is required to run it.**
 
-> ### [⬇ Download DSIP_Downloader.exe](https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases/download/latest/DSIP_Downloader.exe)
->
-> Single file, ~14 MB. From the **Latest Windows build** release.
-
-Prefer the command line? Download it with one command in PowerShell:
-
-```powershell
-curl.exe -L -o "$env:USERPROFILE\Downloads\DSIP_Downloader.exe" https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases/download/latest/DSIP_Downloader.exe
-```
-
-You can also browse every build on the [Releases page](https://github.com/gzdor/Gov-SBIR-Opportunities-Puller-Evaluator/releases).
+> **Note on distribution.** A prebuilt `.exe` is **not** currently offered as a public download. Unsigned PyInstaller executables are frequently misflagged by automated malware scanners, so publishing the binary to public GitHub Releases is disabled for now. Continuous integration still builds and tests the app on every push and keeps the result as a **workflow artifact** (downloadable by the repository owner from the GitHub Actions run). A signed public download may be offered later. In the meantime, build it yourself in one command — see below.
 
 ### Compatibility (Windows only)
 
@@ -39,16 +29,26 @@ You can also browse every build on the [Releases page](https://github.com/gzdor/
 | Install needed | **None** — a single portable `.exe` |
 | macOS / Linux | **Not supported** |
 
-This executable is **Windows only**. It will **not** run on macOS, Linux, 32-bit Windows, or Windows 7/8. (macOS support is not currently planned; Mac users can still run `gui.py` or `main.py` from source — see below.)
+The executable is **Windows only**. It will **not** run on macOS, Linux, 32-bit Windows, or Windows 7/8. (macOS support is not currently planned; Mac and Linux users can still run `gui.py` or `main.py` from source.)
 
-### How to run it
+### Build the `.exe` yourself
+
+From the repository root, with the `dsip-opportunities` environment active (see [Environment](#environment)):
+
+```bat
+pip install -r requirements-build.txt
+pyinstaller --noconfirm --clean DSIP_Downloader.spec
+```
+
+The app is written to `dist\DSIP_Downloader.exe`. This is the same build the CI produces.
+
+### Run it
 
 There is no installer — it is a single, self-contained file.
 
-1. Download `DSIP_Downloader.exe` using the link or command above.
-2. Double-click the file to open the app.
-3. The first launch may show a blue **"Windows protected your PC"** SmartScreen prompt, because the app is not code-signed. Click **More info → Run anyway**. This warning is normal for free, unsigned apps; this `.exe` is built automatically from the source in this repository.
-4. Pick a folder to save into (for example your Downloads folder), click **Download all opportunities**, and watch the progress bar. When it finishes, the app offers to open the folder of PDFs.
+1. Double-click `dist\DSIP_Downloader.exe` (or run `python gui.py` from source).
+2. A locally built, unsigned `.exe` may show a blue **"Windows protected your PC"** SmartScreen prompt. Click **More info → Run anyway**. This warning is normal for unsigned apps and goes away once the binary is code-signed.
+3. Pick a folder to save into (for example your Downloads folder), click **Download all opportunities**, and watch the progress bar. When it finishes, the app offers to open the folder of PDFs.
 
 ## Topic PDFs vs. solicitation documents
 
@@ -170,21 +170,11 @@ Use **Python 3.14**. The conda environment for this repo is named `dsip-opportun
 
 ## Install Miniconda
 
-Skip this when `conda --version` already prints a version. This machine already has Miniconda at `%UserProfile%\miniconda3` (Windows) and `~/miniconda3` (WSL). The one-liners are for a computer that does not have it yet. Both were run with these flags into a temporary folder, checked with `conda --version`, and removed.
+Skip this when `conda --version` already prints a version. If you do not have conda yet, install **Miniconda** by following the official instructions and downloading the installer for your operating system directly from Anaconda:
 
-The install prefix cannot contain spaces. On Windows, `/D=` has to be the last argument.
+- Official Miniconda install guide: <https://www.anaconda.com/docs/getting-started/miniconda/install>
 
-Windows Command Prompt:
-
-```bat
-curl -fsSL -o "%TEMP%\Miniconda3-latest-Windows-x86_64.exe" https://repo.anaconda.com/miniconda/Miniconda3-latest-Windows-x86_64.exe && start /wait "" "%TEMP%\Miniconda3-latest-Windows-x86_64.exe" /InstallationType=JustMe /AddToPath=0 /RegisterPython=0 /S /D=%UserProfile%\miniconda3 && del "%TEMP%\Miniconda3-latest-Windows-x86_64.exe"
-```
-
-Bash:
-
-```bash
-curl -fsSL https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -o /tmp/miniconda.sh && bash /tmp/miniconda.sh -b -p "$HOME/miniconda3" && rm /tmp/miniconda.sh
-```
+Download and run the installer from that page (on Windows, the graphical installer; on Linux/macOS, the shell installer). Install it into a path **without spaces** — the defaults (`%UserProfile%\miniconda3` on Windows, `~/miniconda3` on Linux/macOS) are fine. A fresh Miniconda `base` is already Python 3.14. On this machine it is installed at `%UserProfile%\miniconda3` (Windows) and `~/miniconda3` (WSL).
 
 The Windows install does not put `conda` on `PATH`. Load it in the same Command Prompt with:
 
@@ -298,7 +288,9 @@ Notes:
 
 ## Automated builds (GitHub Actions)
 
-`.github/workflows/build-windows.yml` builds the `.exe` automatically. On every push to `main` it runs the test suite, builds `DSIP_Downloader.exe` on a Windows runner, uploads it as a workflow artifact, and publishes it to a rolling **Latest Windows build** prerelease so there is always a stable download link on the repo's Releases page. Pushing a version tag (`v1.2.3`) publishes a normal, permanent release instead.
+`.github/workflows/build-windows.yml` builds the `.exe` automatically. On every push to `main` it runs the test suite, builds `DSIP_Downloader.exe` on a Windows runner, and uploads it as a **workflow artifact** on that Actions run (downloadable by the repository owner).
+
+**Public release publishing is intentionally disabled.** Unsigned PyInstaller executables are frequently misflagged by automated malware scanners, so the workflow no longer pushes the binary to a public GitHub Release. The release-publishing steps are kept in the workflow, commented out, with instructions to re-enable them (and grant `contents: write`) — ideally only after the executable is code-signed. Until then, the binary lives only as a private workflow artifact, and end users build it from source.
 
 By default the workflow uses GitHub's hosted Windows runner (`runs-on: windows-latest`), which needs no setup. To build on your **own machine** instead, register a self-hosted runner (repo *Settings -> Actions -> Runners -> New self-hosted runner*) and change that line to `runs-on: [self-hosted, windows]`.
 
