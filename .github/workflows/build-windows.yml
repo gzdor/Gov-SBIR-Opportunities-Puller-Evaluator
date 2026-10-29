@@ -1,26 +1,33 @@
 name: Build Windows app
 
-# Builds the Windows desktop executable on every push to main and publishes it
-# to a GitHub Release so it is downloadable as a .exe. Also runs on manual
-# dispatch and on version tags (v*).
+# Builds and tests the Windows desktop executable on every push to main, and
+# stores it as a (private, repo-scoped) workflow artifact.
+#
+# IMPORTANT: publishing the unsigned .exe to a PUBLIC GitHub Release has been
+# DISABLED. Unsigned PyInstaller one-file executables are a common false
+# positive for automated malware scanners, which can lead to the asset being
+# flagged or the account being actioned. Until the executable is code-signed,
+# we only keep it as a workflow artifact (downloadable by the repo owner from
+# the Actions run, not exposed as a public download).
+#
+# To re-enable a public download later (ideally only once the .exe is signed),
+# restore the "Publish ... release" steps at the bottom of this file and set
+# `permissions: contents: write`.
 #
 # RUNNER CHOICE
 # -------------
 # This uses GitHub's hosted Windows runner (runs-on: windows-latest), which
-# needs no setup: pushing a commit just works. If you would rather build on
-# your OWN machine ("local" / self-hosted runner), install the GitHub Actions
-# runner on your PC (repo Settings -> Actions -> Runners -> New self-hosted
-# runner), then change `runs-on: windows-latest` below to:
-#     runs-on: [self-hosted, windows]
+# needs no setup. To build on your OWN machine ("local" / self-hosted runner),
+# register a runner (repo Settings -> Actions -> Runners -> New self-hosted
+# runner) and change `runs-on: windows-latest` to `runs-on: [self-hosted, windows]`.
 
 on:
   push:
     branches: [main]
-    tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write  # needed to create/update the Release
+  contents: read
 
 jobs:
   build:
@@ -64,23 +71,22 @@ jobs:
           path: dist/DSIP_Downloader.exe
           if-no-files-found: error
 
-      # Publish a rolling "latest" prerelease on pushes to main so there is a
-      # stable download link, and a normal release when you push a v* tag.
-      - name: Publish rolling latest release (main)
-        if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: latest
-          name: Latest Windows build
-          prerelease: false
-          body: |
-            Latest automatically built Windows desktop app.
-            Download `DSIP_Downloader.exe` below and double-click to run.
-            Windows 10/11, 64-bit only. No install required.
-          files: dist/DSIP_Downloader.exe
-
-      - name: Publish tagged release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: dist/DSIP_Downloader.exe
+      # ---------------------------------------------------------------------
+      # DISABLED: public release publishing. See the note at the top of this
+      # file. Do not re-enable until the executable is code-signed. Restoring
+      # these also requires `permissions: contents: write` above.
+      #
+      # - name: Publish rolling latest release (main)
+      #   if: github.ref == 'refs/heads/main'
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     tag_name: latest
+      #     name: Latest Windows build
+      #     prerelease: false
+      #     files: dist/DSIP_Downloader.exe
+      #
+      # - name: Publish tagged release
+      #   if: startsWith(github.ref, 'refs/tags/v')
+      #   uses: softprops/action-gh-release@v2
+      #   with:
+      #     files: dist/DSIP_Downloader.exe
