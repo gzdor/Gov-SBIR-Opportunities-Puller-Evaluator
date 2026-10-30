@@ -4,3 +4,4 @@
 #   pip install -r requirements-build.txt
 #   pyinstaller DSIP_Downloader.spec
 pyinstaller>=6.0
+pypdf

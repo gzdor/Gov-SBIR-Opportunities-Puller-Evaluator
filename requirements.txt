@@ -19,3 +19,6 @@ ipython
 
 # Tests in test/
 pytest
+
+# Optional GUI BLUF extraction from topic PDFs (stdlib filter still works without it)
+pypdf

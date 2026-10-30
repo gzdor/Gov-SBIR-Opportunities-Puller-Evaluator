@@ -99,6 +99,12 @@ def test_gui_download_button_runs_full_flow(tmp_path, monkeypatch):
     try:
         app = gui.App(root, interactive=False)
         app.folder_var.set(str(tmp_path))
+        assert "Download all opportunities" in app.button_var.get()
+        app.filter_var.set("illumination")
+        root.update()
+        assert "matching" in app.button_var.get().lower()
+        app.filter_var.set("")
+        root.update()
 
         finished = {"code": None}
         app.on_finished = lambda code: finished.__setitem__("code", code)
@@ -122,6 +128,82 @@ def test_gui_download_button_runs_full_flow(tmp_path, monkeypatch):
         # Two topic PDFs were written.
         pdfs = list(app.output_dir.glob("topic_*.pdf"))
         assert len(pdfs) == 2
+        assert len(app.table.get_children()) == 2
+        assert "BLUF summary" in app.bluf_caption_var.get()
+    finally:
+        root.destroy()
+
+
+def test_gui_table_find_and_dark_theme():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        assert str(root.cget("bg")).lower() == gui.theme.BG
+        app._bluf_rows = [
+            {
+                "topicId": "a",
+                "code": "DAF27BZ01-DV011",
+                "title": "Unmanned Aerial Systems",
+                "client": "USAF",
+                "program": "SBIR",
+                "status": "Open",
+                "opens": "2026-10-28",
+                "due": "2026-11-25",
+                "dueIn": "26d",
+                "problem": "Harness",
+                "trl": "4–6",
+                "funding": "$2,000,000",
+                "contract": "Phase II",
+                "pdf": "topic_a.pdf",
+            },
+            {
+                "topicId": "b",
+                "code": "ARM26BX03",
+                "title": "Armor",
+                "client": "ARMY",
+                "program": "SBIR",
+                "status": "Open",
+                "opens": "—",
+                "due": "—",
+                "dueIn": "—",
+                "problem": "Plate",
+                "trl": "—",
+                "funding": "—",
+                "contract": "Phase I",
+                "pdf": "topic_b.pdf",
+            },
+        ]
+        app._render_table()
+        root.update()
+        assert len(app.table.get_children()) == 2
+        app.table_filter_var.set("UAS")
+        root.update()
+        assert len(app.table.get_children()) == 1
+        assert app.table.item(app.table.get_children()[0], "values")[0] == "DAF27BZ01-DV011"
+        app._sort_by("code")
+        root.update()
+        assert app._sort_column == "code"
+    finally:
+        root.destroy()
+
+
+def test_gui_ctrl_plus_minus_zooms_text():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        assert app._zoom == 1.0
+        app._on_zoom_in()
+        assert app._zoom == pytest.approx(1.1)
+        app._on_zoom_out()
+        assert app._zoom == pytest.approx(1.0)
+        for _ in range(20):
+            app._on_zoom_out()
+        assert app._zoom == gui.theme.ZOOM_MIN
+        for _ in range(20):
+            app._on_zoom_in()
+        assert app._zoom == gui.theme.ZOOM_MAX
+        app._on_zoom_out()
+        assert app._zoom == pytest.approx(gui.theme.ZOOM_MAX - gui.theme.ZOOM_STEP)
     finally:
         root.destroy()
 

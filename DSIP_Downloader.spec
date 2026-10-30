@@ -2,7 +2,7 @@
 """PyInstaller build spec for the DSIP Opportunities Downloader desktop app.
 
 Produces a single, self-contained Windows executable (no console window) that
-bundles the Python runtime, Tkinter, gui.py and main.py.
+bundles the Python runtime, Tkinter, gui.py, main.py, analyze.py, theme.py, and pypdf.
 
 Build:
     pip install -r requirements-build.txt
@@ -30,7 +30,7 @@ a = Analysis(
     pathex=[],
     binaries=_tcltk_dlls,
     datas=[],
-    hiddenimports=["main"],
+    hiddenimports=["main", "analyze", "theme", "pypdf"],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

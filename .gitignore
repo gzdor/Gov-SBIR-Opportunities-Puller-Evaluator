@@ -223,6 +223,13 @@ __marimo__/
 # (the generic *.spec ignore above would otherwise exclude it).
 !DSIP_Downloader.spec
 
+# Never commit unsigned binaries (GitHub malware-scanner / ToS flags)
+*.exe
+
+# One-shot GitHub account-recovery helpers (prompt for tokens; keep local)
+cleanup_latest_release.ps1
+complete_github_cleanup.ps1
+
 # Local DSIP downloads (default output of main.py)
 all_dsip_opportunities_*/
 

@@ -283,7 +283,7 @@ def test_run_exits_with_failure_when_the_catalog_is_short(monkeypatch, tmp_path)
 def test_main_writes_to_the_requested_directory(monkeypatch, tmp_path):
     captured = {}
 
-    def fake_run(output_dir, workers=None):
+    def fake_run(output_dir, workers=None, reporter=None, search_phrase=""):
         captured["output_dir"] = output_dir
         captured["workers"] = workers
         return 0 if output_dir == tmp_path.resolve() else 1

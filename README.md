@@ -6,9 +6,9 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 ## What it looks like
 
-Pick a folder, click one button, and watch the download complete. The app reports live progress, a per-run summary (counts plus download and total run time), and where everything was saved:
+Pick a folder, optionally type a filter phrase (`DAF`, `UAS`, `Air Force`), click **Download all opportunities**, and watch the run complete. The window is a dark clam theme. It shows progress, a per-run summary, and a scrollable BLUF table (code, client, dates, due-in countdown, problem/objective, TRL, funding, contract). Click column headers to sort, use **Find in table** to narrow rows, **Export CSV**, or **Diff previous folder**. Click a PDF filename to open that topic sheet:
 
-![DSIP Opportunities Downloader desktop app after a completed run](docs/images/app-window.png)
+![DSIP Opportunities Downloader after a completed run, with the dark UI and BLUF summary table](docs/images/app-window.jpg)
 
 Every open topic is saved as its own PDF in a timestamped folder, alongside a `manifest.json` and a `solicitation_documents/` subfolder of the shared solicitation PDFs:
 
@@ -242,17 +242,28 @@ Set the number of download threads:
 python main.py --workers 16
 ```
 
+Download only topics that match a local phrase (code, title, agency, aliases such as `DAF` / `UAS`). The phrase is **not** sent to DSIP:
+
+```bat
+python main.py --query "DAF UAS"
+```
+
 A relative `--output` path is resolved from the current working directory. The folder is created if it does not exist. Files that are already valid PDFs in that folder are left in place, so a second run into the same directory resumes.
 
 ## Desktop app (GUI)
 
-For a point-and-click experience there is a small desktop app, `gui.py`, built with Tkinter (which ships with Python, so it adds no third-party runtime dependency). It does exactly three things:
+For a point-and-click experience there is a small desktop app, `gui.py`, built with Tkinter (which ships with Python). It:
 
 1. **Pick a folder** to save into (defaults to your `Downloads` folder).
-2. Click **Download all opportunities**.
-3. Watch a **progress bar** fill as the PDFs land, then open the result folder.
+2. Optionally type a **filter phrase**. Leave it blank to download every open topic. A non-empty phrase filters the catalog **on this machine** with AND-of-OR aliases (`DAF` = Air Force/USAF, `UAS` = unmanned aerial/drone). The phrase is never sent to DSIP and never to a cloud model.
+3. Click **Download all opportunities** (or **Download matching opportunities** when a phrase is set).
+4. Watch the **progress bar**, then read the **BLUF table**: code, topic, government client, program, status, opens, due, due-in, problem/objective, TRL, funding, contract type, and a **PDF** filename. Click a header to sort. **Find in table** filters the snapshot without another download. **Export CSV** writes the visible rows. **Diff previous folder** compares `topicCode` sets against an older `manifest.json`. Click the PDF name to open the local topic sheet (only files inside that run's folder are opened). **Ctrl +** / **Ctrl −** zoom the UI text (also Ctrl = and the numeric keypad).
 
-The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder inside the folder you chose and writes the PDFs and `manifest.json` there — the same layout as the CLI. The download runs on a background thread so the window stays responsive; all the actual work is done by `main.py`, which the GUI drives through its progress-reporter interface (no duplicated logic).
+The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder and writes the PDFs, `manifest.json`, and a `bluf` array in the manifest. PDF text extraction for objective / TRL / funding uses optional local `pypdf` (`pip install pypdf`). If `pypdf` is missing, catalog columns still fill and those three fields show as "—". No cloud AI is used.
+
+The download runs on a background thread so the window stays responsive. Download logic stays in `main.py`.
+
+This is a **local DSIP open-topics appliance**, not a GovWin / HigherGov / GovTribe clone: no seat license, no cloud AI, no SAM-wide CRM. Why that split exists, how alias search works, why GovWin and state/county scrapes stay out, and the adversarial review of those choices are in [`docs/design-decisions/`](docs/design-decisions/) (see [ADR 005](docs/design-decisions/005-multi-source-modes.md) for the multi-source BLUF).
 
 Run it from source:
 
@@ -327,7 +338,7 @@ cd /d C:\Users\zdorg\code_dev\Gov-SBIR-Opportunities-Puller-Evaluator
 pytest
 ```
 
-The tests live in `test/test_main.py` (20 tests). They cover filename cleanup, timestamped output folders, paging past a short page and past a full page of 100, PDF header checks including PDFs delivered in tiny chunks, worker-count bounds, concurrent downloads with mixed success and failure, shared solicitation files, and a short catalog. Search and download calls are stubbed, so pytest does not contact DSIP.
+The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, dark theme, table Find, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
 
 ## Will a run get every topic?
 
@@ -398,6 +409,39 @@ No Google API key is required for `main.py`. The search and PDF routes it uses a
 - **Throttling or connection resets.** Lower `--workers`.
 - **The catalog total changed between two runs.** That is the live DSIP list. Compare `apiTotal` in the two manifests.
 - **Notebook browser cells.** They need a Chromium install from Playwright (`playwright install chromium`) and, on Linux/WSL, `playwright install-deps`. Outputs go under `notebook_outputs/` unless `DSIP_OUTPUT_ROOT` is set. `main.py` does not launch a browser.
+
+## DSIP topic release cadence and next update
+
+This tool downloads whatever is currently in the DSIP **open topics** view (pre-release and open). That list changes when a new solicitation **release** is published, when topics move from pre-release to open, and when a release **closes** and those topics drop out of the view. Re-run the downloader after those dates to pick up the new catalog.
+
+**Cadence (FY 2027).** The Department of War SBIR/STTR/CSO program is on a **monthly** release schedule for FY 2027: Release 1 through Release 12. Each release has three dates:
+
+1. **Pre-release** — topics appear on DSIP. You can read them and (during this window only) contact the topic author directly. This is usually the **first Wednesday of the month**.
+2. **Opens** — proposals can be submitted in DSIP. Direct TPOC contact ends; questions go through DSIP Topic Q&A. Typically about three weeks after pre-release.
+3. **Closes** — 12:00 p.m. ET on the published date, about four weeks after open. Closed topics leave the open-topics catalog.
+
+Not every component (Army, Navy, Air Force, OSW, …) participates in every monthly release. Dates are published as subject to change.
+
+**Where we are now (as of 29 October 2026).** FY 2027 **Release 1** is open for proposals (pre-released 7 Oct 2026, opened 28 Oct 2026, **closes 25 Nov 2026 at 12:00 p.m. ET**). That is the set of topics this downloader currently retrieves. FY 2026 Release 6 closed on 21 Oct 2026.
+
+**Next expected catalog update.** FY 2027 **Release 2** is scheduled to **pre-release on 4 November 2026**. New topics should show up in DSIP (and in a fresh run of this tool) on or shortly after that date. Release 2 then **opens 2 December 2026** and **closes 6 January 2027**. After that, Release 3 pre-releases **2 December 2026**, opens **6 January 2027**, and closes **3 February 2027**.
+
+| FY27 release | Pre-release | Opens | Closes |
+| --- | --- | --- | --- |
+| 1 (current) | 7 Oct 2026 | 28 Oct 2026 | 25 Nov 2026 |
+| 2 (next new topics) | 4 Nov 2026 | 2 Dec 2026 | 6 Jan 2027 |
+| 3 | 2 Dec 2026 | 6 Jan 2027 | 3 Feb 2027 |
+| 4 | 6 Jan 2027 | 27 Jan 2027 | 24 Feb 2027 |
+| 5 | 3 Feb 2027 | 24 Feb 2027 | 24 Mar 2027 |
+| 6 | 3 Mar 2027 | 24 Mar 2027 | 21 Apr 2027 |
+| 7 | 7 Apr 2027 | 28 Apr 2027 | 26 May 2027 |
+| 8 | 5 May 2027 | 26 May 2027 | 23 Jun 2027 |
+| 9 | 2 Jun 2027 | 23 Jun 2027 | 21 Jul 2027 |
+| 10 | 7 Jul 2027 | 28 Jul 2027 | 25 Aug 2027 |
+| 11 | 4 Aug 2027 | 25 Aug 2027 | 22 Sep 2027 |
+| 12 | 1 Sep 2027 | 22 Sep 2027 | 20 Oct 2027 |
+
+Sources: the [Navy SBIR/STTR solicitation schedule](https://www.navysbir.com/solicitations.htm) (DoW FY 2027 calendar, updated 28 Sep 2026) and the [Defense SBIR/STTR opportunities page](https://www.defensesbirsttr.mil/SBIR-STTR/Opportunities/). Confirm live dates on [DSIP Topics](https://www.dodsbirsttr.mil/topics-app/) before relying on a deadline. This table is a snapshot, not an official announcement.
 
 ## License
 

@@ -1,0 +1,59 @@
+{
+  "comment": "Frozen catalog slice for alias tests. Codes and titles match a real FY27 open-topics snapshot.",
+  "topics": [
+    {
+      "topicId": "illum",
+      "topicCode": "DAF27BZ01-DV007",
+      "topicTitle": "Reusable Illumination System",
+      "component": "USAF",
+      "command": "AFMC",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "uas-wire",
+      "topicCode": "DAF27BZ01-DV011",
+      "topicTitle": "Agile Wire Harness Manipulation and Installation for Unmanned Aerial Systems",
+      "component": "USAF",
+      "command": "AFMC",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "ai-refuel",
+      "topicCode": "DAF27TZ01-DV001",
+      "topicTitle": "AI-Enabled Computed Vision Air-to-Air Refueling Performance Assessment",
+      "component": "USAF",
+      "command": "AMC",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "domain",
+      "topicCode": "DAF27BZ01-DV008",
+      "topicTitle": "Technical Data Package Modernization for Domain Assurance and Secure Data Exchange",
+      "component": "USAF",
+      "command": "AFMC",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "cuas",
+      "topicCode": "OSW27BZ01-DV002",
+      "topicTitle": "Counter-Unmanned Aerial Systems Rapid Maturation",
+      "component": "OSW",
+      "command": "DRPM UxS",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "armor",
+      "topicCode": "ARM26BX03-DP007",
+      "topicTitle": "xTech Kinetic Reach Competition",
+      "component": "ARMY",
+      "command": "ASA(ALT)",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    }
+  ]
+}

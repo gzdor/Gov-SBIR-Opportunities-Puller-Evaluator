@@ -28,6 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
+import analyze
+
 REPO_ROOT = Path(__file__).resolve().parent
 SEARCH_URL = "https://www.dodsbirsttr.mil/topics/api/public/topics/search"
 TOPIC_PDF_URL = (
@@ -232,6 +234,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help=(
             "Number of concurrent download threads. "
             f"Default scales with this machine: {default_workers()}."
+        ),
+    )
+    parser.add_argument(
+        "-q",
+        "--query",
+        default="",
+        help=(
+            "Optional local filter phrase. Empty downloads every open topic. "
+            "Matching is done on this machine against catalog fields "
+            "(never sent to DSIP as searchText)."
         ),
     )
     return parser.parse_args(argv)
@@ -622,17 +634,27 @@ def run(
     output_dir: Path,
     workers: int | None = None,
     reporter: "ConsoleReporter | None" = None,
+    search_phrase: str = "",
 ) -> int:
     reporter = reporter or ConsoleReporter()
     if workers is None:
         workers = default_workers()
     workers = max(1, workers)
+    search_phrase = (search_phrase or "").strip()
     run_start = time.monotonic()
     output_dir.mkdir(parents=True, exist_ok=True)
     reporter.status(f"Output directory: {output_dir}")
     reporter.status(f"Download workers: {workers}")
+    if search_phrase:
+        reporter.status(f'Local filter phrase: "{search_phrase}"')
 
     topics, total = fetch_all_topics(reporter)
+    catalog_count = len(topics)
+    if search_phrase:
+        topics = analyze.filter_topics(topics, search_phrase)
+        reporter.status(
+            f'Filter "{search_phrase}": {len(topics)} of {catalog_count} topics matched.'
+        )
     names = assign_topic_names(topics)
 
     download_start = time.monotonic()
@@ -724,28 +746,31 @@ def run(
             }
         )
 
-    if total - len(topics) > 0:
+    if total - catalog_count > 0:
         failures.append(
             {
                 "kind": "catalog",
                 "error": (
                     f"API reported {total} topics and the download collected "
-                    f"{len(topics)}."
+                    f"{catalog_count}."
                 ),
             }
         )
 
+    bluf_rows = [analyze.bluf_row(row, output_dir) for row in topic_rows]
     total_seconds = time.monotonic() - run_start
     manifest = {
         "createdAt": datetime.now().astimezone().isoformat(timespec="seconds"),
         "outputDir": str(output_dir),
         "source": SEARCH_URL,
         "searchParam": SEARCH_PARAM,
+        "searchPhrase": search_phrase or None,
         "pageSize": PAGE_SIZE,
         "workers": workers,
         "downloadSeconds": round(download_seconds, 2),
         "totalSeconds": round(total_seconds, 2),
         "apiTotal": total,
+        "catalogCount": catalog_count,
         "topicsRetrieved": len(topics),
         "topicPdfsDownloaded": downloaded,
         "topicPdfsSkipped": skipped,
@@ -753,6 +778,7 @@ def run(
         "solicitationDocuments": list(solicitation_saved.values()),
         "failures": failures,
         "topics": topic_rows,
+        "bluf": bluf_rows,
     }
     manifest_path = output_dir / "manifest.json"
     write_manifest(manifest_path, manifest)
@@ -771,6 +797,12 @@ def run(
     if failures:
         reporter.status("Completed with failures. See manifest.json.")
         return 1
+    if search_phrase and not topics:
+        reporter.status("Finished. No open topics matched the filter.")
+        return 0
+    if search_phrase:
+        reporter.status("Finished. Every matched topic was retrieved.")
+        return 0
     reporter.status("Finished. Every reported topic was retrieved.")
     return 0
 
@@ -783,7 +815,7 @@ def main(argv: list[str] | None = None) -> int:
         else default_output_dir()
     )
     try:
-        return run(output_dir, args.workers)
+        return run(output_dir, args.workers, search_phrase=args.query)
     except KeyboardInterrupt:
         print("\nInterrupted.")
         return 130
