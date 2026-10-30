@@ -207,6 +207,14 @@ class ConsoleReporter:
             self._bar.close()
             self._bar = None
 
+    def catalog_ready(self, topics: list[dict]) -> None:
+        """GUI hook: filtered catalog before PDFs. CLI ignores it."""
+        return
+
+    def item_done(self, label: str, key: object, outcome: dict) -> None:
+        """GUI hook: one download finished. CLI ignores it."""
+        return
+
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -288,6 +296,42 @@ def epoch_ms_to_iso(value: object) -> str | None:
     if not isinstance(value, (int, float)):
         return None
     return datetime.fromtimestamp(value / 1000, tz=timezone.utc).isoformat()
+
+
+def manifest_topic(
+    topic: dict,
+    pdf_name: str | None,
+    pdf_status: str,
+    pdf_error: str | None = None,
+    attached: list[str] | None = None,
+) -> dict:
+    """Normalize a DSIP catalog record into a manifest `topics[]` row."""
+    topic_id = str(topic.get("topicId") or "")
+    return {
+        "topicId": topic_id,
+        "topicCode": topic.get("topicCode"),
+        "topicTitle": topic.get("topicTitle"),
+        "topicStatus": topic.get("topicStatus"),
+        "component": topic.get("component"),
+        "command": topic.get("command"),
+        "program": topic.get("program"),
+        "solicitationNumber": topic.get("solicitationNumber"),
+        "solicitationTitle": topic.get("solicitationTitle"),
+        "cycleName": topic.get("cycleName"),
+        "releaseNumber": topic.get("releaseNumber"),
+        "topicStartDate": epoch_ms_to_iso(topic.get("topicStartDate")),
+        "topicEndDate": epoch_ms_to_iso(topic.get("topicEndDate")),
+        "topicPreReleaseStartDate": epoch_ms_to_iso(
+            topic.get("topicPreReleaseStartDate")
+        ),
+        "topicPreReleaseEndDate": epoch_ms_to_iso(
+            topic.get("topicPreReleaseEndDate")
+        ),
+        "pdf": None if pdf_error else pdf_name,
+        "pdfStatus": pdf_status,
+        "pdfError": pdf_error,
+        "solicitationDocuments": list(attached or []),
+    }
 
 
 def relpath(path: Path, base: Path) -> str:
@@ -619,6 +663,7 @@ def download_tasks(
             if outcome["error"]:
                 failure = f"{label} FAILED: {describe} -> {outcome['error']}"
             reporter.advance(done, total, failure)
+            reporter.item_done(label, key, outcome)
     reporter.end_phase()
     return results
 
@@ -656,6 +701,15 @@ def run(
             f'Filter "{search_phrase}": {len(topics)} of {catalog_count} topics matched.'
         )
     names = assign_topic_names(topics)
+    preview = [
+        manifest_topic(
+            topic,
+            names[str(topic["topicId"])],
+            "pending",
+        )
+        for topic in topics
+    ]
+    reporter.catalog_ready(preview)
 
     download_start = time.monotonic()
     solicitation_tasks, solicitation_meta = plan_solicitation_tasks(topics, output_dir)
@@ -719,31 +773,13 @@ def run(
                 attached.append(saved["path"])
 
         topic_rows.append(
-            {
-                "topicId": topic_id,
-                "topicCode": topic.get("topicCode"),
-                "topicTitle": topic.get("topicTitle"),
-                "topicStatus": topic.get("topicStatus"),
-                "component": topic.get("component"),
-                "command": topic.get("command"),
-                "program": topic.get("program"),
-                "solicitationNumber": topic.get("solicitationNumber"),
-                "solicitationTitle": topic.get("solicitationTitle"),
-                "cycleName": topic.get("cycleName"),
-                "releaseNumber": topic.get("releaseNumber"),
-                "topicStartDate": epoch_ms_to_iso(topic.get("topicStartDate")),
-                "topicEndDate": epoch_ms_to_iso(topic.get("topicEndDate")),
-                "topicPreReleaseStartDate": epoch_ms_to_iso(
-                    topic.get("topicPreReleaseStartDate")
-                ),
-                "topicPreReleaseEndDate": epoch_ms_to_iso(
-                    topic.get("topicPreReleaseEndDate")
-                ),
-                "pdf": None if error else names[topic_id],
-                "pdfStatus": status,
-                "pdfError": error,
-                "solicitationDocuments": attached,
-            }
+            manifest_topic(
+                topic,
+                names.get(topic_id),
+                status,
+                error,
+                attached,
+            )
         )
 
     if total - catalog_count > 0:

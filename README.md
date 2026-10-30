@@ -6,9 +6,9 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 ## What it looks like
 
-Pick a folder, optionally type a filter phrase (`DAF`, `UAS`, `Air Force`), click **Download all opportunities**, and watch the run complete. The window is a dark clam theme. It shows progress, a per-run summary, and a scrollable BLUF table (code, client, dates, due-in countdown, problem/objective, TRL, funding, contract). Click column headers to sort, use **Find in table** to narrow rows, **Export CSV**, or **Diff previous folder**. Click a PDF filename to open that topic sheet:
+Pick a folder, click **Download all opportunities**, and the **BLUF table** fills as soon as the catalog lands (codes, titles, due dates). After the run, download settings collapse so the table owns the window. Use **Narrow** chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `due < 14d`) or **Find in snapshot** without another download. Rows sort Open first, then soonest due. Click a row for the topic pane (full objective, **Open PDF**, **Copy code**). **Open snapshot…** reloads a previous folder; the last snapshot is restored on the next launch.
 
-![DSIP Opportunities Downloader after a completed run, with the dark UI and BLUF summary table](docs/images/app-window.jpg)
+![DSIP Opportunities Puller & Evaluator after a completed run: collapsed settings, alias chips, BLUF table, and topic detail pane](docs/images/app-window.jpg)
 
 Every open topic is saved as its own PDF in a timestamped folder, alongside a `manifest.json` and a `solicitation_documents/` subfolder of the shared solicitation PDFs:
 
@@ -48,7 +48,7 @@ There is no installer — it is a single, self-contained file.
 
 1. Double-click `dist\DSIP_Downloader.exe` (or run `python gui.py` from source).
 2. A locally built, unsigned `.exe` may show a blue **"Windows protected your PC"** SmartScreen prompt. Click **More info → Run anyway**. This warning is normal for unsigned apps and goes away once the binary is code-signed.
-3. Pick a folder to save into (for example your Downloads folder), click **Download all opportunities**, and watch the progress bar. When it finishes, the app offers to open the folder of PDFs.
+3. Pick a folder to save into (for example your Downloads folder), click **Download all opportunities**, and watch the progress bar. The table fills from the catalog before every PDF has landed. When it finishes, use **Open folder** on the toolbar if you want Explorer; the app no longer blocks on a yes/no dialog.
 
 ## Topic PDFs vs. solicitation documents
 
@@ -254,10 +254,12 @@ A relative `--output` path is resolved from the current working directory. The f
 
 For a point-and-click experience there is a small desktop app, `gui.py`, built with Tkinter (which ships with Python). It:
 
-1. **Pick a folder** to save into (defaults to your `Downloads` folder).
-2. Optionally type a **filter phrase**. Leave it blank to download every open topic. A non-empty phrase filters the catalog **on this machine** with AND-of-OR aliases (`DAF` = Air Force/USAF, `UAS` = unmanned aerial/drone). The phrase is never sent to DSIP and never to a cloud model.
-3. Click **Download all opportunities** (or **Download matching opportunities** when a phrase is set).
-4. Watch the **progress bar**, then read the **BLUF table**: code, topic, government client, program, status, opens, due, due-in, problem/objective, TRL, funding, contract type, and a **PDF** filename. Click a header to sort. **Find in table** filters the snapshot without another download. **Export CSV** writes the visible rows. **Diff previous folder** compares `topicCode` sets against an older `manifest.json`. Click the PDF name to open the local topic sheet (only files inside that run's folder are opened). **Ctrl +** / **Ctrl −** zoom the UI text (also Ctrl = and the numeric keypad).
+1. **Pick a folder** to save into (defaults to your `Downloads` folder), or skip this if you are reopening the last snapshot.
+2. Optionally type a **download filter**. Leave it blank to pull every open topic. A non-empty phrase filters the catalog **on this machine** with AND-of-OR aliases (`DAF` = Air Force/USAF, `UAS` = unmanned aerial/drone). The phrase is never sent to DSIP and never to a cloud model. Use **Download settings** if that panel is collapsed.
+3. Click **Download all opportunities** (or **Download matching opportunities** when a phrase or chip is set).
+4. The **BLUF table** fills as soon as the catalog JSON arrives; TRL/funding fill as each topic PDF lands. After the run, folder/filter/log collapse so the table and topic pane own the window.
+5. **Narrow** with chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `due < 14d`) or **Find in snapshot**. Default sort is Open first, then soonest due. Click a row for the full objective, **Open PDF**, and **Copy code**.
+6. **Open snapshot…** reloads a previous `manifest.json`. The last folder is restored on the next launch. **Export CSV** writes the visible rows. **Open folder** opens the save location (no blocking dialog). **Ctrl +** / **Ctrl −** zoom the UI text.
 
 The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder and writes the PDFs, `manifest.json`, and a `bluf` array in the manifest. PDF text extraction for objective / TRL / funding uses optional local `pypdf` (`pip install pypdf`). If `pypdf` is missing, catalog columns still fill and those three fields show as "—". No cloud AI is used.
 
@@ -338,7 +340,7 @@ cd /d C:\Users\zdorg\code_dev\Gov-SBIR-Opportunities-Puller-Evaluator
 pytest
 ```
 
-The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, dark theme, table Find, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
+The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, catalog-first table fill, last-snapshot restore, chips, due-in sort, dark theme, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
 
 ## Will a run get every topic?
 

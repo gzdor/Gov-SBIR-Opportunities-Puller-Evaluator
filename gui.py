@@ -18,6 +18,7 @@ import queue
 import sys
 import threading
 import traceback
+from collections import Counter
 from pathlib import Path
 
 import tkinter as tk
@@ -27,7 +28,16 @@ import analyze
 import main as core
 import theme
 
-APP_TITLE = "DSIP Opportunities Downloader"
+APP_TITLE = "DSIP Opportunities — Puller & Evaluator"
+STATE_FILE = Path.home() / ".dsip_downloader_state.json"
+CHIP_SPECS = (
+    ("DAF", "DAF"),
+    ("Navy", "Navy"),
+    ("Army", "Army"),
+    ("UAS", "UAS"),
+    ("D2P2", "D2P2"),
+    ("due < 14d", "__due14__"),
+)
 
 
 class QueueReporter:
@@ -54,6 +64,14 @@ class QueueReporter:
     def end_phase(self) -> None:
         self._events.put(("end_phase",))
 
+    def catalog_ready(self, topics: list[dict]) -> None:
+        self._events.put(("catalog_ready", topics))
+
+    def item_done(self, label: str, key: object, outcome: dict) -> None:
+        self._events.put(
+            ("item_done", {"label": label, "key": key, "outcome": outcome})
+        )
+
 
 class App:
     """The single-window application."""
@@ -68,6 +86,8 @@ class App:
         self.finished = False
         self._indeterminate = False
         self.on_finished = None  # optional callback for tests
+        self._chrome_collapsed = False
+        self._selected_row: dict | None = None
 
         root.title(APP_TITLE)
         root.minsize(960, 620)
@@ -78,19 +98,26 @@ class App:
         self.filter_var = tk.StringVar(value="")
         self.table_filter_var = tk.StringVar(value="")
         self.bluf_caption_var = tk.StringVar(
-            value="BLUF summary appears after a download."
+            value="Download this cycle, or open a previous snapshot."
         )
         self.button_var = tk.StringVar(value="Download all opportunities")
+        self.detail_title_var = tk.StringVar(
+            value="Double-click a row for the full objective."
+        )
         self._bluf_rows: list[dict] = []
         self._topics_for_diff: list[dict] = []
         self._sort_column = ""
         self._sort_reverse = False
         self._zoom = 1.0
+        self._chip_vars: dict[str, tk.BooleanVar] = {
+            key: tk.BooleanVar(value=False) for _, key in CHIP_SPECS
+        }
 
         self._build_widgets()
         self._bind_zoom()
         self.filter_var.trace_add("write", self._sync_button_label)
         self.table_filter_var.trace_add("write", lambda *_: self._render_table())
+        self._restore_state()
 
     # ---- UI construction -------------------------------------------------
     def _build_widgets(self) -> None:
@@ -100,45 +127,52 @@ class App:
         frame = ttk.Frame(self.root, padding=12)
         frame.pack(fill="both", expand=True)
         frame.columnconfigure(1, weight=1)
+        self._frame = frame
 
         ttk.Label(
             frame,
-            text="Download all open DoD SBIR/STTR DSIP opportunities",
+            text="Pull and evaluate open DoD SBIR/STTR DSIP opportunities",
             style="Title.TLabel",
         ).grid(row=0, column=0, columnspan=3, sticky="w", **pad)
 
-        ttk.Label(frame, text="Save in folder:").grid(
-            row=1, column=0, sticky="w", **pad
+        self.setup_frame = ttk.Frame(frame)
+        self.setup_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
+        self.setup_frame.columnconfigure(1, weight=1)
+
+        ttk.Label(self.setup_frame, text="Save in folder:").grid(
+            row=0, column=0, sticky="w", **pad
         )
-        self.folder_entry = ttk.Entry(frame, textvariable=self.folder_var)
-        self.folder_entry.grid(row=1, column=1, sticky="ew", **pad)
-        self.browse_btn = ttk.Button(frame, text="Browse...", command=self.browse)
-        self.browse_btn.grid(row=1, column=2, sticky="e", **pad)
+        self.folder_entry = ttk.Entry(self.setup_frame, textvariable=self.folder_var)
+        self.folder_entry.grid(row=0, column=1, sticky="ew", **pad)
+        self.browse_btn = ttk.Button(
+            self.setup_frame, text="Browse...", command=self.browse
+        )
+        self.browse_btn.grid(row=0, column=2, sticky="e", **pad)
 
         ttk.Label(
-            frame,
+            self.setup_frame,
             text=(
                 "A timestamped subfolder (all_dsip_opportunities_YYYYMMDD_HHMMSS)\n"
                 "will be created inside the folder above."
             ),
             style="Hint.TLabel",
-        ).grid(row=2, column=0, columnspan=3, sticky="w", padx=10)
+        ).grid(row=1, column=0, columnspan=3, sticky="w", padx=10)
 
-        ttk.Label(frame, text="Filter phrase (optional):").grid(
-            row=3, column=0, sticky="w", **pad
+        ttk.Label(self.setup_frame, text="Download filter (optional):").grid(
+            row=2, column=0, sticky="w", **pad
         )
-        self.filter_entry = ttk.Entry(frame, textvariable=self.filter_var)
-        self.filter_entry.grid(row=3, column=1, columnspan=2, sticky="ew", **pad)
+        self.filter_entry = ttk.Entry(self.setup_frame, textvariable=self.filter_var)
+        self.filter_entry.grid(row=2, column=1, columnspan=2, sticky="ew", **pad)
         self.filter_entry.bind("<Return>", lambda _e: self.start_download())
 
         ttk.Label(
-            frame,
+            self.setup_frame,
             text=(
-                "Leave blank for every open topic. Try DAF, UAS, or Air Force — "
-                "aliases match locally (never sent to DSIP)."
+                "Applied on the next download only (never sent to DSIP). "
+                "Use chips or Find below to narrow a snapshot already on disk."
             ),
             style="Hint.TLabel",
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=10)
+        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=10)
 
         self.download_btn = ttk.Button(
             frame,
@@ -146,23 +180,23 @@ class App:
             command=self.start_download,
             style="Accent.TButton",
         )
-        self.download_btn.grid(row=5, column=0, columnspan=3, sticky="ew", **pad)
+        self.download_btn.grid(row=2, column=0, columnspan=3, sticky="ew", **pad)
 
         self.progress = ttk.Progressbar(frame, mode="determinate", maximum=100)
-        self.progress.grid(row=6, column=0, columnspan=3, sticky="ew", **pad)
+        self.progress.grid(row=3, column=0, columnspan=3, sticky="ew", **pad)
 
         ttk.Label(frame, textvariable=self.phase_var).grid(
-            row=7, column=0, columnspan=3, sticky="w", padx=10
+            row=4, column=0, columnspan=3, sticky="w", padx=10
         )
 
-        log_frame = ttk.Frame(frame)
-        log_frame.grid(row=8, column=0, columnspan=3, sticky="nsew", **pad)
-        log_frame.columnconfigure(0, weight=1)
-        log_frame.rowconfigure(0, weight=1)
+        self.log_frame = ttk.Frame(frame)
+        self.log_frame.grid(row=5, column=0, columnspan=3, sticky="nsew", **pad)
+        self.log_frame.columnconfigure(0, weight=1)
+        self.log_frame.rowconfigure(0, weight=1)
 
         self.log = tk.Text(
-            log_frame,
-            height=5,
+            self.log_frame,
+            height=4,
             wrap="word",
             state="disabled",
             bg=theme.FIELD,
@@ -173,33 +207,60 @@ class App:
             borderwidth=0,
         )
         self.log.grid(row=0, column=0, sticky="nsew")
-        scrollbar = ttk.Scrollbar(log_frame, command=self.log.yview)
+        scrollbar = ttk.Scrollbar(self.log_frame, command=self.log.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=scrollbar.set)
 
+        chips = ttk.Frame(frame)
+        chips.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 2))
+        ttk.Label(chips, text="Narrow:").grid(row=0, column=0, sticky="w")
+        for index, (label, key) in enumerate(CHIP_SPECS, start=1):
+            ttk.Checkbutton(
+                chips,
+                text=label,
+                variable=self._chip_vars[key],
+                command=self._on_chips,
+            ).grid(row=0, column=index, sticky="w", padx=6)
+
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
-            row=9, column=0, columnspan=2, sticky="w", padx=10
+            row=7, column=0, columnspan=2, sticky="w", padx=10
         )
         ttk.Label(
             frame,
-            text="Click a PDF filename to open it.  Ctrl + / Ctrl − zoom text.",
+            text="Double-click a row for details. Ctrl + / Ctrl − zoom.",
             style="Hint.TLabel",
-        ).grid(row=9, column=2, sticky="e", padx=10)
+        ).grid(row=7, column=2, sticky="e", padx=10)
 
         tool = ttk.Frame(frame)
-        tool.grid(row=10, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
+        tool.grid(row=8, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
         tool.columnconfigure(1, weight=1)
-        ttk.Label(tool, text="Find in table:").grid(row=0, column=0, sticky="w")
+        ttk.Label(tool, text="Find in snapshot:").grid(row=0, column=0, sticky="w")
         self.table_filter_entry = ttk.Entry(tool, textvariable=self.table_filter_var)
         self.table_filter_entry.grid(row=0, column=1, sticky="ew", padx=8)
         self.export_btn = ttk.Button(tool, text="Export CSV", command=self.export_csv)
-        self.export_btn.grid(row=0, column=2, padx=4)
-        self.diff_btn = ttk.Button(tool, text="Diff previous folder…", command=self.diff_previous)
-        self.diff_btn.grid(row=0, column=3, padx=4)
+        self.export_btn.grid(row=0, column=2, padx=2)
+        self.diff_btn = ttk.Button(
+            tool, text="Diff previous…", command=self.diff_previous
+        )
+        self.diff_btn.grid(row=0, column=3, padx=2)
+        self.open_folder_btn = ttk.Button(
+            tool, text="Open folder", command=self.open_output_folder
+        )
+        self.open_folder_btn.grid(row=0, column=4, padx=2)
+        self.open_snapshot_btn = ttk.Button(
+            tool, text="Open snapshot…", command=self.open_snapshot
+        )
+        self.open_snapshot_btn.grid(row=0, column=5, padx=2)
+        self.settings_btn = ttk.Button(
+            tool, text="Hide settings", command=self.toggle_chrome
+        )
+        self.settings_btn.grid(row=0, column=6, padx=2)
 
-        table_frame = ttk.Frame(frame)
-        table_frame.grid(row=11, column=0, columnspan=3, sticky="nsew", **pad)
-        frame.rowconfigure(11, weight=1)
+        pane = ttk.Panedwindow(frame, orient=tk.VERTICAL)
+        pane.grid(row=9, column=0, columnspan=3, sticky="nsew", **pad)
+        frame.rowconfigure(9, weight=1)
+
+        table_frame = ttk.Frame(pane)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 
@@ -251,7 +312,39 @@ class App:
         yscroll.grid(row=0, column=1, sticky="ns")
         xscroll.grid(row=1, column=0, sticky="ew")
         self.table.bind("<Button-1>", self._on_table_click)
+        self.table.bind("<Double-1>", self._on_table_double)
+        self.table.bind("<Return>", self._on_table_activate)
+
+        detail = ttk.LabelFrame(pane, text="Topic", padding=8)
+        detail.columnconfigure(0, weight=1)
+        ttk.Label(detail, textvariable=self.detail_title_var).grid(
+            row=0, column=0, columnspan=3, sticky="w", pady=(0, 4)
+        )
+        self.detail_text = tk.Text(
+            detail,
+            height=6,
+            wrap="word",
+            state="disabled",
+            bg=theme.FIELD,
+            fg=theme.FG,
+            insertbackground=theme.FG,
+            selectbackground=theme.SELECT,
+            highlightthickness=0,
+            borderwidth=0,
+        )
+        self.detail_text.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        detail.rowconfigure(1, weight=1)
+        self.open_pdf_btn = ttk.Button(detail, text="Open PDF", command=self._open_selected_pdf)
+        self.open_pdf_btn.grid(row=2, column=0, sticky="w", pady=(6, 0))
+        self.copy_code_btn = ttk.Button(
+            detail, text="Copy code", command=self._copy_selected_code
+        )
+        self.copy_code_btn.grid(row=2, column=1, sticky="w", padx=8, pady=(6, 0))
+
+        pane.add(table_frame, weight=4)
+        pane.add(detail, weight=1)
         theme.apply_zoom(self.root, self._zoom, self.log)
+        self.detail_text.configure(font=("Segoe UI", 10))
 
     def _bind_zoom(self) -> None:
         for seq in (
@@ -279,6 +372,8 @@ class App:
 
     def _set_zoom(self, scale: float) -> None:
         self._zoom = theme.apply_zoom(self.root, scale, self.log)
+        size = max(6, int(round(10 * self._zoom)))
+        self.detail_text.configure(font=("Segoe UI", size))
 
     # ---- actions ---------------------------------------------------------
     def browse(self) -> None:
@@ -288,6 +383,21 @@ class App:
         )
         if chosen:
             self.folder_var.set(chosen)
+            self._save_state()
+
+    def toggle_chrome(self) -> None:
+        self._set_chrome_collapsed(not self._chrome_collapsed)
+
+    def _set_chrome_collapsed(self, collapsed: bool) -> None:
+        self._chrome_collapsed = collapsed
+        if collapsed:
+            self.setup_frame.grid_remove()
+            self.log_frame.grid_remove()
+            self.settings_btn.configure(text="Download settings")
+        else:
+            self.setup_frame.grid()
+            self.log_frame.grid()
+            self.settings_btn.configure(text="Hide settings")
 
     def start_download(self) -> None:
         if self.worker and self.worker.is_alive():
@@ -306,18 +416,19 @@ class App:
         self.output_dir = core.timestamped_dir(parent)
         self.finished = False
         self.exit_code = None
+        self._set_chrome_collapsed(False)
         self._set_running(True)
         self._bluf_rows = []
         self._topics_for_diff = []
         self._clear_log()
         self._clear_table()
-        self.bluf_caption_var.set("Downloading…")
+        self.bluf_caption_var.set("Fetching catalog…")
         self.phase_var.set("Starting...")
         self.progress.configure(mode="indeterminate")
         self.progress.start(12)
         self._indeterminate = True  # bar is animating until the first phase begins
 
-        phrase = self.filter_var.get().strip()
+        phrase = self.filter_var.get().strip() or self._chip_phrase()
         reporter = QueueReporter(self.events)
         self.worker = threading.Thread(
             target=self._run_download,
@@ -378,8 +489,48 @@ class App:
                 self._append_log(info["failure"])
         elif kind == "end_phase":
             pass
+        elif kind == "catalog_ready":
+            self._apply_catalog(event[1])
+        elif kind == "item_done":
+            self._apply_item_done(event[1])
         elif kind == "finished":
             self._on_finished(event[1])
+
+    def _apply_catalog(self, topics: list[dict]) -> None:
+        self._topics_for_diff = list(topics)
+        self._bluf_rows = [analyze.bluf_row(topic, None) for topic in topics]
+        for row, topic in zip(self._bluf_rows, self._topics_for_diff):
+            row["pdf"] = topic.get("pdf") or ""
+            row["pdfStatus"] = topic.get("pdfStatus") or "pending"
+        self._render_table()
+        self._refresh_caption(pending=True)
+        self._save_state()
+
+    def _apply_item_done(self, info: dict) -> None:
+        if info.get("label") != "topic PDF":
+            return
+        key = str(info.get("key") or "")
+        outcome = info.get("outcome") or {}
+        status = outcome.get("status") or "failed"
+        error = outcome.get("error")
+        topic = next(
+            (row for row in self._topics_for_diff if str(row.get("topicId")) == key),
+            None,
+        )
+        if topic is None:
+            return
+        topic["pdfStatus"] = "failed" if error else status
+        if error:
+            topic["pdf"] = None
+            topic["pdfError"] = error
+        for index, row in enumerate(self._bluf_rows):
+            if str(row.get("topicId")) == key:
+                refreshed = analyze.bluf_row(topic, self.output_dir)
+                refreshed["pdfStatus"] = topic.get("pdfStatus") or ""
+                self._bluf_rows[index] = refreshed
+                break
+        self._render_table()
+        self._refresh_caption(pending=True)
 
     def _on_finished(self, code: int) -> None:
         self.exit_code = code
@@ -396,23 +547,22 @@ class App:
         self.phase_var.set("Done" if code == 0 else "Finished with issues")
         self._load_bluf_table()
         self._set_running(False)
-        if self.interactive:
-            self._offer_open_folder(code)
+        self._set_chrome_collapsed(True)
+        self._save_state()
         if self.on_finished:
             self.on_finished(code)
 
-    def _offer_open_folder(self, code: int) -> None:
-        where = self.output_dir
-        message = (
-            f"Download complete.\n\nSaved to:\n{where}\n\nOpen the folder now?"
-            if code == 0
-            else (
-                f"Finished with some failures. See manifest.json.\n\n"
-                f"Saved to:\n{where}\n\nOpen the folder now?"
-            )
+    def open_output_folder(self) -> None:
+        self._open_folder(self.output_dir)
+
+    def open_snapshot(self) -> None:
+        start = self.output_dir or self.folder_var.get() or str(Path.home())
+        chosen = filedialog.askdirectory(
+            title="Choose a previous download folder (with manifest.json)",
+            initialdir=start,
         )
-        if messagebox.askyesno(APP_TITLE, message):
-            self._open_folder(where)
+        if chosen:
+            self._load_snapshot(Path(chosen))
 
     @staticmethod
     def _open_folder(path: Path | None) -> None:
@@ -435,16 +585,67 @@ class App:
         self.table_filter_entry.configure(state=state)
         self.export_btn.configure(state=state)
         self.diff_btn.configure(state=state)
+        self.open_snapshot_btn.configure(state=state)
 
     def _sync_button_label(self, *_args: object) -> None:
-        if self.filter_var.get().strip():
+        if self.filter_var.get().strip() or self._chip_phrase():
             self.button_var.set("Download matching opportunities")
         else:
             self.button_var.set("Download all opportunities")
 
+    def _chip_phrase(self) -> str:
+        parts = [
+            key
+            for _, key in CHIP_SPECS
+            if key != "__due14__" and self._chip_vars[key].get()
+        ]
+        return " ".join(parts)
+
+    def _on_chips(self) -> None:
+        self._sync_button_label()
+        self._render_table()
+
     def _clear_table(self) -> None:
         for item in self.table.get_children():
             self.table.delete(item)
+
+    def _load_snapshot(self, folder: Path) -> bool:
+        manifest_path = folder / "manifest.json"
+        if not manifest_path.is_file():
+            self._warn("That folder has no manifest.json.")
+            return False
+        self.output_dir = folder
+        self._load_bluf_table()
+        self._set_chrome_collapsed(True)
+        self._save_state()
+        return True
+
+    def _restore_state(self) -> None:
+        try:
+            payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        parent = payload.get("parent")
+        if parent:
+            self.folder_var.set(str(parent))
+        last = payload.get("last_output")
+        if last and (Path(last) / "manifest.json").is_file():
+            self.output_dir = Path(last)
+            self._load_bluf_table()
+            self._set_chrome_collapsed(True)
+            self.phase_var.set("Last snapshot")
+
+    def _save_state(self) -> None:
+        payload = {
+            "parent": self.folder_var.get().strip(),
+            "last_output": str(self.output_dir) if self.output_dir else "",
+        }
+        try:
+            STATE_FILE.write_text(
+                json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+            )
+        except OSError:
+            pass
 
     def _load_bluf_table(self) -> None:
         self._clear_table()
@@ -466,15 +667,36 @@ class App:
         self._bluf_rows = rows
         self._topics_for_diff = payload.get("topics") or []
         self._render_table()
-        n = len(rows)
-        failed = sum(1 for row in rows if row.get("pdfStatus") == "failed")
         phrase = payload.get("searchPhrase")
-        if n == 0 and phrase:
+        if not rows and phrase:
             self.bluf_caption_var.set(f'No topics matched "{phrase}".')
-        elif failed:
-            self.bluf_caption_var.set(f"BLUF summary ({n} topics, {failed} failed)")
         else:
-            self.bluf_caption_var.set(f"BLUF summary ({n} topics)")
+            self._refresh_caption()
+
+    def _refresh_caption(self, pending: bool = False) -> None:
+        n = len(self._bluf_rows)
+        if n == 0:
+            self.bluf_caption_var.set("No topics in this snapshot.")
+            return
+        ready = sum(
+            1
+            for row in self._bluf_rows
+            if row.get("pdf")
+            and row.get("pdfStatus") not in {"failed", "pending", None, ""}
+        )
+        failed = sum(1 for row in self._bluf_rows if row.get("pdfStatus") == "failed")
+        agencies = Counter()
+        for row in self._bluf_rows:
+            client = str(row.get("client") or "—").split("/")[0].strip()
+            agencies[client or "—"] += 1
+        mix = " · ".join(f"{count} {name}" for name, count in agencies.most_common(6))
+        shown = len(self._visible_rows())
+        prefix = f"BLUF ({shown} shown / {n} topics)"
+        pdfs = f"PDFs {ready}/{n}"
+        if failed:
+            pdfs += f", {failed} failed"
+        extra = " · fetching PDFs" if pending and ready < n else ""
+        self.bluf_caption_var.set(f"{prefix} · {pdfs} · {mix}{extra}")
 
     def _row_matches_find(
         self, row: dict, needle: str, groups: list[list[str]]
@@ -493,9 +715,31 @@ class App:
         }
         return analyze.topic_matches_groups(fake, groups)
 
+    @staticmethod
+    def _due_days(row: dict) -> int | None:
+        val = str(row.get("dueIn") or "")
+        if val == "today":
+            return 0
+        if val.endswith("d") and val[:-1].isdigit():
+            return int(val[:-1])
+        return None
+
     def _visible_rows(self) -> list[dict]:
-        needle = self.table_filter_var.get().strip()
         rows = list(self._bluf_rows)
+        for _, key in CHIP_SPECS:
+            if key == "__due14__" or not self._chip_vars[key].get():
+                continue
+            groups = analyze.query_groups(key)
+            rows = [
+                row for row in rows if self._row_matches_find(row, key, groups)
+            ]
+        if self._chip_vars["__due14__"].get():
+            rows = [
+                row
+                for row in rows
+                if self._due_days(row) is not None and self._due_days(row) <= 14
+            ]
+        needle = self.table_filter_var.get().strip()
         if needle:
             groups = analyze.query_groups(needle)
             rows = [row for row in rows if self._row_matches_find(row, needle, groups)]
@@ -504,7 +748,21 @@ class App:
                 key=lambda row: self._sort_key(row, self._sort_column),
                 reverse=self._sort_reverse,
             )
+        else:
+            rows.sort(key=self._default_sort_key)
         return rows
+
+    @staticmethod
+    def _status_rank(row: dict) -> int:
+        status = str(row.get("status") or "").lower()
+        if status.startswith("pre"):
+            return 1
+        if "open" in status:
+            return 0
+        return 2
+
+    def _default_sort_key(self, row: dict) -> tuple:
+        return (self._status_rank(row),) + self._sort_key(row, "dueIn")
 
     @staticmethod
     def _sort_key(row: dict, column: str) -> tuple:
@@ -522,14 +780,20 @@ class App:
     def _render_table(self) -> None:
         self._clear_table()
         for index, row in enumerate(self._visible_rows()):
-            tags = ("pdflink",) if row.get("pdf") and row.get("pdfStatus") != "failed" else ()
+            tags = ("pdflink",) if row.get("pdf") and row.get("pdfStatus") not in {
+                "failed",
+                "pending",
+            } else ()
+            iid = str(row.get("topicId") or f"row-{index}")
             self.table.insert(
                 "",
                 "end",
-                iid=str(row.get("topicId") or f"row-{index}"),
+                iid=iid,
                 values=tuple(row.get(col) or "—" for col in self._columns),
                 tags=tags,
             )
+        if self._bluf_rows:
+            self._refresh_caption()
 
     def _sort_by(self, column: str) -> None:
         if self._sort_column == column:
@@ -555,7 +819,9 @@ class App:
         self._append_log(f"Exported BLUF CSV: {dest}")
 
     def diff_previous(self) -> None:
-        chosen = filedialog.askdirectory(title="Choose a previous download folder (with manifest.json)")
+        chosen = filedialog.askdirectory(
+            title="Choose a previous download folder (with manifest.json)"
+        )
         if not chosen:
             return
         manifest = Path(chosen) / "manifest.json"
@@ -569,7 +835,7 @@ class App:
             return
         current = getattr(self, "_topics_for_diff", [])
         if not current:
-            self._warn("Run a download in this window first so there is a current snapshot.")
+            self._warn("Load or download a snapshot first so there is something to compare.")
             return
         diff = analyze.snapshot_diff(current, previous)
         self._append_log(
@@ -581,6 +847,79 @@ class App:
             self._append_log("  new: " + ", ".join(diff["added"][:12]))
         if diff["removed"]:
             self._append_log("  gone: " + ", ".join(diff["removed"][:12]))
+        if self._chrome_collapsed:
+            self.log_frame.grid()
+
+    def _row_by_iid(self, iid: str) -> dict | None:
+        for row in self._bluf_rows:
+            if str(row.get("topicId")) == iid:
+                return row
+        return None
+
+    def _show_detail(self, row: dict) -> None:
+        self._selected_row = row
+        title = f"{row.get('code') or '—'}  ·  {row.get('title') or '—'}"
+        self.detail_title_var.set(title)
+        body = "\n".join(
+            [
+                f"Client: {row.get('client') or '—'}",
+                f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
+                f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
+                f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
+                f"PDF: {row.get('pdf') or '—'}",
+                "",
+                str(row.get("problem") or row.get("overview") or "—"),
+            ]
+        )
+        self.detail_text.configure(state="normal")
+        self.detail_text.delete("1.0", "end")
+        self.detail_text.insert("1.0", body)
+        self.detail_text.configure(state="disabled")
+
+    def _on_table_activate(self, _event: tk.Event | None = None) -> str:
+        selection = self.table.selection()
+        if selection:
+            row = self._row_by_iid(selection[0])
+            if row:
+                self._show_detail(row)
+        return "break"
+
+    def _on_table_double(self, event: tk.Event) -> str:
+        if self.table.identify_region(event.x, event.y) != "cell":
+            return "break"
+        item = self.table.identify_row(event.y)
+        if not item:
+            return "break"
+        row = self._row_by_iid(item)
+        if row:
+            self.table.selection_set(item)
+            self._show_detail(row)
+        return "break"
+
+    def _open_selected_pdf(self) -> None:
+        row = self._selected_row
+        if not row or not self.output_dir:
+            return
+        pdf_name = row.get("pdf") or ""
+        if not pdf_name or pdf_name in {"Failed", "—"}:
+            self._warn("That topic has no local PDF yet.")
+            return
+        if not analyze.open_local_pdf(self.output_dir, pdf_name):
+            self._warn(
+                "Could not open that PDF. The path must be a real .pdf file "
+                "inside this download folder."
+            )
+
+    def _copy_selected_code(self) -> None:
+        row = self._selected_row
+        if not row:
+            return
+        code = str(row.get("code") or "")
+        if not code:
+            return
+        self.root.clipboard_clear()
+        self.root.clipboard_append(code)
+        self._append_log(f"Copied {code}")
 
     def _on_table_click(self, event: tk.Event) -> None:
         if self.table.identify_region(event.x, event.y) != "cell":
@@ -590,10 +929,14 @@ class App:
             index = int(column.replace("#", "")) - 1
         except ValueError:
             return
-        if index < 0 or index >= len(self._columns) or self._columns[index] != "pdf":
-            return
         item = self.table.identify_row(event.y)
         if not item:
+            return
+        row = self._row_by_iid(item)
+        if row:
+            self.table.selection_set(item)
+            self._show_detail(row)
+        if index < 0 or index >= len(self._columns) or self._columns[index] != "pdf":
             return
         values = self.table.item(item, "values")
         if not values or index >= len(values):
