@@ -386,3 +386,43 @@ def test_progress_bar_counts_and_closes(capsys):
     assert "test" in out
     assert "a note" in out
     assert "2/2" in out
+
+
+def test_fetch_topic_questions_rejects_invalid_id(monkeypatch):
+    called = {"n": 0}
+
+    def boom(url, timeout):
+        called["n"] += 1
+        raise AssertionError(f"open_url must not run for invalid ids: {url}")
+
+    monkeypatch.setattr(main, "open_url", boom)
+    for bad in ("../secret", "topic id", "", "%2e%2e", "a/b"):
+        try:
+            main.fetch_topic_questions(bad)
+        except RuntimeError as exc:
+            assert "invalid topic id" in str(exc).lower()
+        else:
+            raise AssertionError(f"expected invalid topic id to fail for {bad!r}")
+    assert called["n"] == 0
+
+
+def test_save_published_questions_writes_json(tmp_path, monkeypatch):
+    items = [
+        {
+            "questionId": 1,
+            "question": "<p>Threshold?</p>",
+            "answers": [{"answer": '{"content":"<p>220VAC</p>","length":6}'}],
+        }
+    ]
+    monkeypatch.setattr(main, "fetch_topic_questions", lambda _tid: items)
+    topics = [
+        topic(0, noOfPublishedQuestions=2),
+        topic(1, noOfPublishedQuestions=0),
+    ]
+    saved = main.save_published_questions(topics, tmp_path)
+    assert saved == 1
+    qa_path = tmp_path / "qa" / "ARM26BX00.json"
+    assert qa_path.is_file()
+    assert topics[0]["qaFile"] == "qa/ARM26BX00.json"
+    assert "Threshold?" in topics[0]["qaExcerpt"]
+    assert topics[1].get("qaFile") in (None, "")

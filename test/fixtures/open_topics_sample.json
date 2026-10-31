@@ -54,6 +54,33 @@
       "command": "ASA(ALT)",
       "program": "SBIR",
       "topicStatus": "Open"
+    },
+    {
+      "topicId": "darpa",
+      "topicCode": "DPA27XX01-001",
+      "topicTitle": "Assured autonomy for contested logistics",
+      "component": "DARPA",
+      "command": "",
+      "program": "SBIR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "nsf",
+      "topicCode": "NSF26STTR-001",
+      "topicTitle": "Quantum sensing",
+      "component": "NSF",
+      "command": "",
+      "program": "STTR",
+      "topicStatus": "Open"
+    },
+    {
+      "topicId": "nasa",
+      "topicCode": "NASA26OT-001",
+      "topicTitle": "Lunar comms relay",
+      "component": "NASA",
+      "command": "",
+      "program": "SBIR",
+      "topicStatus": "Open"
     }
   ]
 }

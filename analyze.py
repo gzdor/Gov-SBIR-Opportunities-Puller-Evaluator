@@ -8,6 +8,7 @@ inside the run's output directory.
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import re
@@ -75,6 +76,16 @@ _CODE_PREFIX_ALIASES = {
     "OSW": ["osw", "osd", "drpm"],
     "OSD": ["osd", "osw"],
     "DPA": ["dpa", "darpa"],
+    "SOC": ["socom", "ussocom"],
+    "MDA": ["mda"],
+    "DTR": ["dtra"],
+    "DLA": ["dla"],
+    "CBD": ["cbd"],
+    "DHP": ["dhp", "dha"],
+    "NGA": ["nga"],
+    "NAS": ["nasa"],
+    "NOA": ["noaa"],
+    "NSF": ["nsf"],
 }
 _QUERY_ALIASES = {
     "daf": ["daf", "usaf", "air force", "airforce"],
@@ -90,6 +101,18 @@ _QUERY_ALIASES = {
     "osd": ["osw", "osd"],
     "darpa": ["dpa", "darpa"],
     "dpa": ["dpa", "darpa"],
+    "socom": ["socom", "ussocom"],
+    "ussocom": ["socom", "ussocom"],
+    "mda": ["mda", "missile defense"],
+    "dtra": ["dtra"],
+    "dla": ["dla"],
+    "cbd": ["cbd", "chem bio"],
+    "dhp": ["dhp", "dha", "defense health"],
+    "dha": ["dhp", "dha", "defense health"],
+    "nga": ["nga"],
+    "nasa": ["nasa"],
+    "noaa": ["noaa"],
+    "nsf": ["nsf"],
     "uas": [
         "uas", "uav", "uxs", "drone", "drones",
         "unmanned aerial", "unmanned aircraft", "uncrewed air", "uncrewed aerial",
@@ -245,8 +268,58 @@ def catalog_blob(topic: dict) -> str:
         topic.get("topicObjective"),
         topic.get("topicDescription"),
         topic.get("keywords"),
+        topic.get("cmmcLevel") or topic.get("cmmc"),
+        topic.get("qaExcerpt"),
     ]
     return " ".join(str(p) for p in parts if p)
+
+
+_HTML_TAG = re.compile(r"<[^>]+>")
+
+
+def strip_html(text: str | None) -> str:
+    raw = str(text or "")
+    raw = _HTML_TAG.sub(" ", raw)
+    return re.sub(r"\s+", " ", raw).replace("&nbsp;", " ").replace("&amp;", "&").strip()
+
+
+def published_qa_count(topic: dict) -> int:
+    for key in ("noOfPublishedQuestions", "qaPublished"):
+        raw = topic.get(key)
+        if raw in (None, "", "—"):
+            continue
+        try:
+            return max(0, int(raw))
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+
+def qa_answer_text(answer: dict | str | None) -> str:
+    raw: object = answer
+    if isinstance(answer, dict):
+        raw = answer.get("answer") or answer.get("content") or ""
+    if isinstance(raw, str) and raw.lstrip().startswith("{"):
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict):
+            raw = parsed.get("content") or raw
+    return strip_html(str(raw or ""))
+
+
+def format_qa_excerpt(items: list[dict] | None, limit: int = 3) -> str:
+    lines: list[str] = []
+    for item in (items or [])[:limit]:
+        question = strip_html(str(item.get("question") or ""))
+        answers = item.get("answers") or []
+        answer = qa_answer_text(answers[0] if answers else "")
+        if question:
+            lines.append(f"Q: {question}")
+        if answer:
+            lines.append(f"A: {answer}")
+    return "\n".join(lines)
 
 
 def matches_all_tokens(topic: dict, tokens: list[str]) -> bool:
@@ -563,6 +636,23 @@ def extract_bluf_from_text(
     }
 
 
+def tpoc_label(topic: dict) -> str:
+    ready = topic.get("tpoc")
+    if ready:
+        return str(ready)
+    if topic.get("showTpoc") is False:
+        return "—"
+    managers = topic.get("topicManagers") or []
+    names = []
+    for manager in managers:
+        if not isinstance(manager, dict):
+            continue
+        name = str(manager.get("name") or "").strip()
+        if name:
+            names.append(name)
+    return ", ".join(names) or "—"
+
+
 def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
     pdf_name = topic.get("pdf") or ""
     title = str(topic.get("topicTitle") or "")
@@ -597,7 +687,7 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         extracted["overview"] = title
     command = topic.get("command") or ""
     client = " / ".join(p for p in (component, command) if p) or "—"
-    return {
+    row = {
         "topicId": topic.get("topicId") or "",
         "code": code or "—",
         "title": title or "—",
@@ -614,7 +704,40 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         "contract": extracted["contract"],
         "pdf": pdf_name,
         "pdfStatus": topic.get("pdfStatus") or "",
+        "qaPublished": published_qa_count(topic),
+        "qaAsked": topic.get("topicQuestionCount") or topic.get("qaAsked") or 0,
+        "qaStatus": topic.get("topicQAStatusDisplay") or topic.get("qaStatus") or "—",
+        "qaFile": topic.get("qaFile") or "",
+        "qaExcerpt": topic.get("qaExcerpt") or "",
+        "cmmc": topic.get("cmmcLevel") or topic.get("cmmc") or "—",
+        "tpoc": tpoc_label(topic),
     }
+    excerpt = load_qa_excerpt(output_dir, row.get("qaFile") or "")
+    if excerpt:
+        row["qaExcerpt"] = excerpt
+    return row
+
+
+def load_qa_excerpt(output_dir: Path | None, relative: str) -> str:
+    if output_dir is None or not relative or not isinstance(relative, str):
+        return ""
+    if "\x00" in relative or ":" in Path(relative).name:
+        return ""
+    base = output_dir.resolve()
+    candidate = (base / relative).resolve()
+    try:
+        candidate.relative_to(base)
+    except ValueError:
+        return ""
+    if candidate.suffix.lower() != ".json" or not candidate.is_file():
+        return ""
+    try:
+        payload = json.loads(candidate.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    if not isinstance(payload, list):
+        return ""
+    return format_qa_excerpt(payload)
 
 
 def resolve_pdf(output_dir: Path, relative: str) -> Path | None:
@@ -746,6 +869,7 @@ def pipeline_summary(rows: list[dict]) -> dict:
             if row.get("pdf") and row.get("pdfStatus") not in {"failed", "pending", None, ""}
         ),
         "pdf_failed": sum(1 for row in rows if row.get("pdfStatus") == "failed"),
+        "qa_published": sum(1 for row in rows if published_qa_count(row) > 0),
     }
 
 
@@ -766,6 +890,7 @@ def format_pipeline_line(
         f"{shown} shown / {n} topics · {summary['open']} Open · "
         f"{summary['due_7']} due ≤7d · {summary['due_14']} due ≤14d · "
         f"{summary['pre_release']} Pre-Release · {summary['pursue']} Pursue · "
+        f"{summary.get('qa_published', 0)} with Q&A · "
         f"{pdfs} · {mix}{extra}"
     )
 
@@ -786,6 +911,7 @@ def format_capture_brief(row: dict) -> str:
             f"Contract: {row.get('contract') or '—'}"
         ),
         f"Funding: {row.get('funding') or '—'}",
+        f"CMMC: {row.get('cmmc') or '—'} · Q&A published: {published_qa_count(row)}",
     ]
     if call:
         lines.append(f"Call: {call}")
@@ -812,6 +938,8 @@ BLUF_CSV_COLUMNS = (
     "funding",
     "contract",
     "pdf",
+    "qaPublished",
+    "cmmc",
     "note",
 )
 

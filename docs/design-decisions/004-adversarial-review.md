@@ -54,6 +54,9 @@ Objections that changed the design are marked **fixed**.
 | A31 | Public unsigned `.exe` for BD distribution | **Rejected** | Artifact-only |
 | A36 | PDF-link cyan hid closing-soon color | **Fixed** | Urgency / Pursue tags only |
 | A38 | Catalog-first PDF refresh wiped an in-progress note | **Fixed** | Commit + rebind selected row from `_triage` |
+| A53 | Invalid Q&A `topicId` test could hit live DSIP | **Fixed** | Stub `open_url`; assert zero calls |
+| A54 | Q&A excerpt reader lacked a traversal test | **Fixed** | `load_qa_excerpt("../secret.json")` is empty |
+| A55 | Non-https guide link test asserted nothing | **Fixed** | Mock `webbrowser.open` |
 
 ## Architecture of the review loop
 

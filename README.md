@@ -6,7 +6,7 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 ## What it looks like
 
-Pick a folder, click **Download all opportunities**, and the **BLUF table** fills as soon as the catalog lands (codes, titles, due dates). After the run, download settings collapse so the table owns the window. The caption is a pipeline strip (Open, due ≤7d / ≤14d, Pursue). Use **Narrow** chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `Open`, `due < 7d`, `due < 14d`) or **Find in snapshot** without another download. Mark **Pursue / Watch / Pass** (keys `1` `2` `3` on the table), add a one-line note, and **Copy brief** for email. Calls stay in `~/.dsip_downloader_state.json`, not in `manifest.json`. Rows sort Open first, then soonest due; closing-soon rows are amber. **Open snapshot…** reloads a previous folder; the last snapshot and your calls are restored on the next launch.
+Pick a folder, click **Download all opportunities**, and the **BLUF table** fills as soon as the catalog lands (codes, titles, due dates). After the run, download settings collapse so the table owns the window. The caption is a pipeline strip (Open, due ≤7d / ≤14d, Pursue, topics with Q&A). Use **Component** chips (DAF, Army, Navy, OSD, SOCOM, DARPA, MDA, DTRA, DLA, CBD, DHP, NGA, NASA, NOAA, NSF) and **Narrow** chips (`SBIR`, `STTR`, `UAS`, `D2P2`, `Open`, `Has Q&A`, `due < 7d`, `due < 14d`) or **Find in snapshot** without another download. Mark **Pursue / Watch / Pass** (keys `1` `2` `3` on the table), add a one-line note, and **Copy brief** for email. Calls stay in `~/.dsip_downloader_state.json`, not in `manifest.json`. Rows sort Open first, then soonest due; closing-soon rows are amber. **Open snapshot…** reloads a previous folder; the last snapshot and your calls are restored on the next launch.
 
 ![DSIP Opportunities Puller & Evaluator after a completed run: collapsed settings, alias chips, BLUF table, and topic detail pane](docs/images/app-window.jpg)
 
@@ -258,10 +258,10 @@ For a point-and-click experience there is a small desktop app, `gui.py`, built w
 2. Optionally type a **download filter**. Leave it blank to pull every open topic. A non-empty phrase filters the catalog **on this machine** with AND-of-OR aliases (`DAF` = Air Force/USAF, `UAS` = unmanned aerial/drone). The phrase is never sent to DSIP and never to a cloud model. Use **Download settings** if that panel is collapsed.
 3. Click **Download all opportunities** (or **Download matching opportunities** when a phrase or chip is set).
 4. The **BLUF table** fills as soon as the catalog JSON arrives; TRL/funding fill as each topic PDF lands. After the run, folder/filter/log collapse so the table and topic pane own the window.
-5. **Narrow** with chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `Open`, `due < 7d`, `due < 14d`) or **Find in snapshot**. Filter **Calls** to the topics you marked. Default sort is Open first, then soonest due. Click a row for the objective, **Open PDF**, **Copy code**, **Copy brief**, and Pursue / Watch / Pass. Keys `1` / `2` / `3` / `0` work when the table is focused.
+5. **Component** chips match the DSIP filter (DAF, Army, Navy, OSD, SOCOM, DARPA, MDA, DTRA, DLA, CBD, DHP, NGA, NASA, NOAA, NSF). **Narrow** with `SBIR` / `STTR` / `UAS` / `D2P2` / `Open` / `Has Q&A` / due windows, or **Find in snapshot**. Filter **Calls** to the topics you marked. Default sort is Open first, then soonest due. Click a row for the objective, published Q&A excerpt, CMMC, **Open PDF**, **Copy code**, **Copy brief**, and Pursue / Watch / Pass. Keys `1` / `2` / `3` / `0` work when the table is focused. The **How SBIR works** tab is an offline briefing (eligibility, open vs specific topics, Q&A, D2P2, where award ceilings live). It is not a live scrape of any consultant site.
 6. **Open snapshot…** reloads a previous `manifest.json`. The last folder and your local calls/notes are restored on the next launch. **Export CSV** writes the visible rows, including `call` and `note`. **Open folder** opens the save location (no blocking dialog). **Ctrl +** / **Ctrl −** zoom the UI text.
 
-The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder and writes the PDFs, `manifest.json`, and a `bluf` array in the manifest. PDF text extraction for objective / TRL / funding uses optional local `pypdf` (`pip install pypdf`). If `pypdf` is missing, catalog columns still fill and those three fields show as "—". No cloud AI is used.
+The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder and writes the PDFs, `manifest.json`, a `bluf` array, and `qa/*.json` for topics that already have **published** Topic Q&A (public read; asking a question still requires a DSIP login, which this app does not do). PDF text extraction for objective / TRL / funding uses optional local `pypdf` (`pip install pypdf`). If `pypdf` is missing, catalog columns still fill and those three fields show as "—". No cloud AI is used.
 
 The download runs on a background thread so the window stays responsive. Download logic stays in `main.py`.
 
@@ -340,7 +340,7 @@ cd /d C:\Users\zdorg\code_dev\Gov-SBIR-Opportunities-Puller-Evaluator
 pytest
 ```
 
-The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, catalog-first table fill, last-snapshot restore, chips, due-in sort, pipeline counts, triage persist/filter, copy-brief, dark theme, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
+The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`, `test_sbir_guide.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, catalog-first table fill, last-snapshot restore, chips, due-in sort, pipeline counts, triage persist/filter, copy-brief, the How-SBIR-works tab, dark theme, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
 
 ## Will a run get every topic?
 

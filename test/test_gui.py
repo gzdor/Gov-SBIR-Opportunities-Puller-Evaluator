@@ -75,6 +75,10 @@ def _bluf(
         "pdf": extra.pop("pdf", "topic.pdf"),
         "call": extra.pop("call", ""),
         "note": extra.pop("note", ""),
+        "qaPublished": extra.pop("qaPublished", 0),
+        "cmmc": extra.pop("cmmc", "—"),
+        "qaExcerpt": extra.pop("qaExcerpt", ""),
+        "tpoc": extra.pop("tpoc", "—"),
     }
     row.update(extra)
     return row
@@ -433,6 +437,65 @@ def test_gui_rejects_empty_folder(monkeypatch):
         root.destroy()
 
 
+def test_gui_has_how_sbir_works_tab(monkeypatch):
+    opened: list[str] = []
+    monkeypatch.setattr("webbrowser.open", lambda url: opened.append(url))
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        tabs = [app.notebook.tab(tab_id, "text") for tab_id in app.notebook.tabs()]
+        assert tabs == ["Catalog", "How SBIR works"]
+        body = app.guide_text.get("1.0", "end")
+        assert "How the SBIR / STTR program works" in body
+        assert "Direct to Phase II" in body
+        assert "Get my free funding report" not in body
+        app.notebook.select(1)
+        root.update()
+        assert "How SBIR" in app.notebook.tab(app.notebook.select(), "text")
+        app._open_guide_link("http://example.invalid")
+        app._open_guide_link("not-a-url")
+        app._open_guide_link("https://www.dodsbirsttr.mil/topics-app/")
+        assert opened == ["https://www.dodsbirsttr.mil/topics-app/"]
+    finally:
+        root.destroy()
+
+
+def test_gui_department_chips_and_has_qa_filter():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        for _, key in gui.DEPARTMENT_CHIPS:
+            assert key in app._chip_vars
+        app._bluf_rows = [
+            _bluf("a", "DAF01", "Air", client="USAF", qaPublished=2, qaExcerpt="Q: Threshold?"),
+            _bluf("b", "ARM01", "Armor", client="ARMY", qaPublished=0),
+        ]
+        app._chip_vars["DAF"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "DAF01"
+        }
+        app._chip_vars["DAF"].set(False)
+        app._chip_vars["Army"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "ARM01"
+        }
+        app._chip_vars["Army"].set(False)
+        app._chip_vars["__qa__"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "DAF01"
+        }
+        app._show_detail(app._bluf_rows[0])
+        assert "Threshold?" in app.detail_text.get("1.0", "end")
+    finally:
+        root.destroy()
+
+
 def test_gui_status_chips_do_not_change_download_phrase():
     root = _make_root()
     try:
@@ -440,6 +503,7 @@ def test_gui_status_chips_do_not_change_download_phrase():
         app._chip_vars["__open__"].set(True)
         app._chip_vars["__due7__"].set(True)
         app._chip_vars["__due14__"].set(True)
+        app._chip_vars["__qa__"].set(True)
         app._on_chips()
         root.update()
         assert app._chip_phrase() == ""

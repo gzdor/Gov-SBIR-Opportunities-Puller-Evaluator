@@ -47,6 +47,17 @@ def test_daf_uas_is_and_of_or_groups():
     assert kept == ["DAF27BZ01-DV011"]
 
 
+def test_dsip_component_chips_match_catalog_agencies():
+    assert "DPA27XX01-001" in _codes("DARPA")
+    assert "NSF26STTR-001" in _codes("NSF")
+    assert "NSF26STTR-001" in _codes("STTR")
+    assert "NASA26OT-001" in _codes("NASA")
+    assert "DAF27BZ01-DV007" not in _codes("DARPA")
+    assert "DAF27BZ01-DV007" not in _codes("STTR")
+    assert "ARM26BX03-DP007" not in _codes("NSF")
+    assert "ARM26BX03-DP007" not in _codes("NASA")
+
+
 def test_osw_and_osd_aliases():
     assert "OSW27BZ01-DV002" in _codes("OSW")
     assert "OSW27BZ01-DV002" in _codes("OSD")

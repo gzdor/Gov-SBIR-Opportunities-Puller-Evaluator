@@ -130,6 +130,13 @@ def apply_dark_theme(root: tk.Tk) -> ttk.Style:
     )
     style.configure("TLabelframe", background=PANEL, foreground=FG)
     style.configure("TLabelframe.Label", background=PANEL, foreground=FG)
+    style.configure("TNotebook", background=PANEL, bordercolor=HEAD)
+    style.configure("TNotebook.Tab", background=HEAD, foreground=FG, padding=(12, 6))
+    style.map(
+        "TNotebook.Tab",
+        background=[("selected", SELECT), ("active", ROW)],
+        foreground=[("selected", FG)],
+    )
     style.configure("TProgressbar", troughcolor=FIELD, background=ACCENT, bordercolor=HEAD)
     style.configure(
         "Treeview",

@@ -196,6 +196,41 @@ def test_format_capture_brief_and_triage_normalize():
     assert "Need a reusable harness." in brief
 
 
+def test_qa_html_and_nested_answer_are_stripped():
+    assert analyze.strip_html("<p>Hello&nbsp;world</p>") == "Hello world"
+    assert analyze.published_qa_count({"noOfPublishedQuestions": 2}) == 2
+    assert analyze.published_qa_count({"qaPublished": "0"}) == 0
+    excerpt = analyze.format_qa_excerpt(
+        [
+            {
+                "question": "<p>Weight threshold?</p>",
+                "answers": [
+                    {"answer": '{"content":"<p>Use 220VAC.</p>","length":12}'}
+                ],
+            }
+        ]
+    )
+    assert "Q: Weight threshold?" in excerpt
+    assert "A: Use 220VAC." in excerpt
+    assert "<p>" not in excerpt
+
+
+def test_load_qa_excerpt_rejects_traversal_and_non_json(tmp_path):
+    import json
+
+    secret = tmp_path.parent / "secret.json"
+    secret.write_text("[]", encoding="utf-8")
+    (tmp_path / "qa").mkdir()
+    good = tmp_path / "qa" / "ok.json"
+    good.write_text(
+        json.dumps([{"question": "<p>Hi</p>", "answers": []}]),
+        encoding="utf-8",
+    )
+    assert analyze.load_qa_excerpt(tmp_path, "../secret.json") == ""
+    assert analyze.load_qa_excerpt(tmp_path, "qa/missing.json") == ""
+    assert "Q: Hi" in analyze.load_qa_excerpt(tmp_path, "qa/ok.json")
+
+
 def test_write_bluf_csv_includes_call_and_note(tmp_path):
     dest = tmp_path / "bluf.csv"
     analyze.write_bluf_csv(

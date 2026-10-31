@@ -25,20 +25,39 @@ from tkinter import filedialog, messagebox, ttk
 
 import analyze
 import main as core
+import sbir_guide
 import theme
 
 APP_TITLE = "DSIP Opportunities — Puller & Evaluator"
 STATE_FILE = Path.home() / ".dsip_downloader_state.json"
-CHIP_SPECS = (
+DEPARTMENT_CHIPS = (
     ("DAF", "DAF"),
-    ("Navy", "Navy"),
     ("Army", "Army"),
+    ("Navy", "Navy"),
+    ("OSD", "OSD"),
+    ("SOCOM", "SOCOM"),
+    ("DARPA", "DARPA"),
+    ("MDA", "MDA"),
+    ("DTRA", "DTRA"),
+    ("DLA", "DLA"),
+    ("CBD", "CBD"),
+    ("DHP", "DHP"),
+    ("NGA", "NGA"),
+    ("NASA", "NASA"),
+    ("NOAA", "NOAA"),
+    ("NSF", "NSF"),
+)
+WORKFLOW_CHIPS = (
+    ("SBIR", "SBIR"),
+    ("STTR", "STTR"),
     ("UAS", "UAS"),
     ("D2P2", "D2P2"),
     ("Open", "__open__"),
+    ("Has Q&A", "__qa__"),
     ("due < 7d", "__due7__"),
     ("due < 14d", "__due14__"),
 )
+CHIP_SPECS = DEPARTMENT_CHIPS + WORKFLOW_CHIPS
 DOWNLOAD_CHIP_KEYS = {key for _, key in CHIP_SPECS if not str(key).startswith("__")}
 CALL_FILTERS = ("All calls", "Pursue", "Watch", "Pass", "Untagged")
 
@@ -133,10 +152,13 @@ class App:
         pad = {"padx": 10, "pady": 6}
         accent = tk.Frame(self.root, bg=theme.ACCENT, height=3)
         accent.pack(fill="x", side="top")
-        frame = ttk.Frame(self.root, padding=12)
-        frame.pack(fill="both", expand=True)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill="both", expand=True)
+        frame = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(frame, text="Catalog")
         frame.columnconfigure(1, weight=1)
         self._frame = frame
+        self._build_guide_tab()
 
         ttk.Label(
             frame,
@@ -222,15 +244,27 @@ class App:
 
         chips = ttk.Frame(frame)
         chips.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 2))
-        ttk.Label(chips, text="Narrow:").grid(row=0, column=0, sticky="w")
-        for index, (label, key) in enumerate(CHIP_SPECS, start=1):
+        ttk.Label(chips, text="Component:").grid(row=0, column=0, sticky="nw")
+        dept = ttk.Frame(chips)
+        dept.grid(row=0, column=1, columnspan=12, sticky="w")
+        for index, (label, key) in enumerate(DEPARTMENT_CHIPS):
             ttk.Checkbutton(
-                chips,
+                dept,
                 text=label,
                 variable=self._chip_vars[key],
                 command=self._on_chips,
-            ).grid(row=0, column=index, sticky="w", padx=6)
-        ttk.Label(chips, text="Calls:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+            ).grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+        ttk.Label(chips, text="Narrow:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        work = ttk.Frame(chips)
+        work.grid(row=1, column=1, columnspan=12, sticky="w", pady=(4, 0))
+        for index, (label, key) in enumerate(WORKFLOW_CHIPS):
+            ttk.Checkbutton(
+                work,
+                text=label,
+                variable=self._chip_vars[key],
+                command=self._on_chips,
+            ).grid(row=0, column=index, sticky="w", padx=4)
+        ttk.Label(chips, text="Calls:").grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.call_filter = ttk.Combobox(
             chips,
             textvariable=self.call_filter_var,
@@ -238,12 +272,12 @@ class App:
             state="readonly",
             width=12,
         )
-        self.call_filter.grid(row=1, column=1, sticky="w", padx=6, pady=(4, 0))
+        self.call_filter.grid(row=2, column=1, sticky="w", padx=6, pady=(4, 0))
         ttk.Label(
             chips,
             text="1 Pursue · 2 Watch · 3 Pass · 0 clear   (table focused)",
             style="Hint.TLabel",
-        ).grid(row=1, column=2, columnspan=8, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=2, columnspan=8, sticky="w", pady=(4, 0))
 
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
             row=7, column=0, columnspan=2, sticky="w", padx=10
@@ -297,6 +331,8 @@ class App:
             "opens",
             "due",
             "dueIn",
+            "qaPublished",
+            "cmmc",
             "problem",
             "trl",
             "funding",
@@ -317,6 +353,8 @@ class App:
             "opens": ("Opens", 90),
             "due": ("Due", 90),
             "dueIn": ("Due in", 70),
+            "qaPublished": ("Q&A", 45),
+            "cmmc": ("CMMC", 60),
             "problem": ("Problem / objective", 220),
             "trl": ("TRL", 45),
             "funding": ("Funding", 80),
@@ -406,6 +444,56 @@ class App:
         pane.add(detail, weight=1)
         theme.apply_zoom(self.root, self._zoom, self.log)
         self.detail_text.configure(font=("Segoe UI", 10))
+        self.guide_text.configure(font=("Segoe UI", 10))
+
+    def _build_guide_tab(self) -> None:
+        guide = ttk.Frame(self.notebook, padding=12)
+        self.notebook.add(guide, text="How SBIR works")
+        guide.columnconfigure(0, weight=1)
+        guide.rowconfigure(1, weight=1)
+        ttk.Label(
+            guide,
+            text="How the SBIR / STTR program works",
+            style="Title.TLabel",
+        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        self.guide_text = tk.Text(
+            guide,
+            wrap="word",
+            state="normal",
+            bg=theme.FIELD,
+            fg=theme.FG,
+            insertbackground=theme.FG,
+            selectbackground=theme.SELECT,
+            highlightthickness=0,
+            borderwidth=0,
+            padx=8,
+            pady=8,
+        )
+        scroll = ttk.Scrollbar(guide, command=self.guide_text.yview)
+        self.guide_text.configure(yscrollcommand=scroll.set)
+        self.guide_text.grid(row=1, column=0, sticky="nsew")
+        scroll.grid(row=1, column=1, sticky="ns")
+        self.guide_text.insert("1.0", sbir_guide.guide_plain_text())
+        self.guide_text.configure(state="disabled")
+        links = ttk.Frame(guide)
+        links.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        ttk.Label(links, text="Open in browser:", style="Hint.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 6)
+        )
+        for index, (label, url) in enumerate(sbir_guide.LINKS):
+            ttk.Button(
+                links,
+                text=label,
+                command=lambda dest=url: self._open_guide_link(dest),
+            ).grid(row=index // 4, column=(index % 4) + 1, sticky="w", padx=4, pady=2)
+
+    @staticmethod
+    def _open_guide_link(url: str) -> None:
+        if not url.startswith("https://"):
+            return
+        import webbrowser
+
+        webbrowser.open(url)
 
     def _bind_zoom(self) -> None:
         for seq in (
@@ -435,6 +523,8 @@ class App:
         self._zoom = theme.apply_zoom(self.root, scale, self.log)
         size = max(6, int(round(10 * self._zoom)))
         self.detail_text.configure(font=("Segoe UI", size))
+        if getattr(self, "guide_text", None) is not None:
+            self.guide_text.configure(font=("Segoe UI", size))
 
     # ---- actions ---------------------------------------------------------
     def browse(self) -> None:
@@ -810,7 +900,7 @@ class App:
         self, row: dict, needle: str, groups: list[list[str]]
     ) -> bool:
         blob = " ".join(str(row.get(col) or "") for col in self._columns)
-        blob = f"{blob} {row.get('note') or ''}".lower()
+        blob = f"{blob} {row.get('note') or ''} {row.get('qaExcerpt') or ''}".lower()
         if needle.lower() in blob:
             return True
         fake = {
@@ -843,6 +933,8 @@ class App:
             rows = [row for row in rows if self._due_in_window(row, 7)]
         if self._chip_vars["__due14__"].get():
             rows = [row for row in rows if self._due_in_window(row, 14)]
+        if self._chip_vars["__qa__"].get():
+            rows = [row for row in rows if analyze.published_qa_count(row) > 0]
         wanted = self.call_filter_var.get()
         if wanted == "Pursue":
             rows = [
@@ -1004,11 +1096,16 @@ class App:
                 f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
                 f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
                 f"Call: {call}",
+                f"CMMC: {row.get('cmmc') or '—'}    Q&A: {row.get('qaPublished') or 0} published ({row.get('qaStatus') or '—'})",
+                f"TPOC: {row.get('tpoc') or '—'}",
                 f"PDF: {row.get('pdf') or '—'}",
                 "",
                 str(row.get("problem") or row.get("overview") or "—"),
             ]
         )
+        excerpt = str(row.get("qaExcerpt") or "").strip()
+        if excerpt:
+            body = f"{body}\n\nPublished Q&A\n{excerpt}"
         self.detail_text.configure(state="normal")
         self.detail_text.delete("1.0", "end")
         self.detail_text.insert("1.0", body)

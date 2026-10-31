@@ -35,6 +35,9 @@ SEARCH_URL = "https://www.dodsbirsttr.mil/topics/api/public/topics/search"
 TOPIC_PDF_URL = (
     "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/download/PDF"
 )
+QUESTIONS_URL = (
+    "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/questions"
+)
 UPLOAD_PDF_URL = (
     "https://www.dodsbirsttr.mil/submissions/api/public/download?uploadId={upload_id}"
 )
@@ -331,6 +334,13 @@ def manifest_topic(
         "pdfStatus": pdf_status,
         "pdfError": pdf_error,
         "solicitationDocuments": list(attached or []),
+        "qaPublished": analyze.published_qa_count(topic),
+        "qaAsked": topic.get("topicQuestionCount") or topic.get("qaAsked") or 0,
+        "qaStatus": topic.get("topicQAStatusDisplay") or topic.get("qaStatus") or "",
+        "qaOpen": topic.get("topicQAOpen"),
+        "qaFile": topic.get("qaFile") or "",
+        "cmmcLevel": topic.get("cmmcLevel") or topic.get("cmmc") or "",
+        "tpoc": analyze.tpoc_label(topic),
     }
 
 
@@ -358,6 +368,50 @@ def open_url(url: str, timeout: int) -> object:
                 raise
         time.sleep(attempt)
     raise RuntimeError(f"Request failed for {url}") from last_error
+
+
+def fetch_topic_questions(topic_id: str) -> list[dict]:
+    """Published Topic Q&A. Public read; asking still requires a DSIP login."""
+    if not TOPIC_ID_PATTERN.fullmatch(topic_id or ""):
+        raise RuntimeError("Refusing to fetch Q&A for an invalid topic id.")
+    url = QUESTIONS_URL.format(topic_id=topic_id)
+    with open_url(url, timeout=60) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    if not isinstance(payload, list):
+        raise RuntimeError(f"Expected a JSON array from {url}")
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def save_published_questions(
+    topics: list[dict], output_dir: Path, reporter: "ConsoleReporter | None" = None
+) -> int:
+    """Write `qa/*.json` for topics that already have published answers."""
+    reporter = reporter or ConsoleReporter()
+    saved = 0
+    qa_dir = output_dir / "qa"
+    pending = [
+        topic for topic in topics if analyze.published_qa_count(topic) > 0
+    ]
+    if not pending:
+        reporter.status("Published Topic Q&A to fetch: 0.")
+        return 0
+    reporter.status(f"Published Topic Q&A to fetch: {len(pending)}.")
+    qa_dir.mkdir(parents=True, exist_ok=True)
+    for topic in pending:
+        topic_id = str(topic.get("topicId") or "")
+        code = safe_filename(str(topic.get("topicCode") or topic_id), max_len=80)
+        dest = qa_dir / f"{code}.json"
+        try:
+            items = fetch_topic_questions(topic_id)
+            dest.write_text(
+                json.dumps(items, indent=2) + "\n", encoding="utf-8"
+            )
+            topic["qaFile"] = relpath(dest, output_dir)
+            topic["qaExcerpt"] = analyze.format_qa_excerpt(items)
+            saved += 1
+        except Exception as exc:  # noqa: BLE001 - Q&A is best-effort
+            reporter.status(f"Q&A failed for {code}: {exc}")
+    return saved
 
 
 def fetch_json(url: str) -> dict:
@@ -742,6 +796,7 @@ def run(
     topic_tasks, topic_results = plan_topic_tasks(topics, names, output_dir)
     reporter.status(f"Topic PDFs to fetch: {len(topics)}.")
     topic_results.update(download_tasks(topic_tasks, workers, "topic PDF", reporter))
+    save_published_questions(topics, output_dir, reporter)
     download_seconds = time.monotonic() - download_start
 
     topic_rows = []

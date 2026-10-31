@@ -13,6 +13,8 @@ review** that had to fail before the code landed.
 | [004](004-adversarial-review.md) | Findings the counter-agent raised and how they were closed |
 | [005](005-multi-source-modes.md) | GovWin / SAM / grants / SLED: keep DSIP; never GovWin or county scrape |
 | [006](006-bd-triage-pipeline.md) | Local Pursue/Watch/Pass, pipeline strip, copy-brief — not a CRM |
+| [007](007-topic-qa-and-component-chips.md) | Published Topic Q&A in the snapshot; DSIP component chips |
+| [008](008-how-sbir-works-tab.md) | Offline How-SBIR-works tab; no consultant reprint or scrape |
 
 Do **not** use these notes as permission to: publish an unsigned `.exe`, send
 filter text to DSIP `searchText`, call a cloud LLM, add third-party OAuth,
