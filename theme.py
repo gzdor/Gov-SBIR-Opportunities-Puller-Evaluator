@@ -17,6 +17,9 @@ MUTED = "#9aa0a6"
 ACCENT = "#3ddc97"
 SELECT = "#1f6feb"
 LINK = "#7dd3fc"
+WARN = "#f5a524"
+SOON = "#e6c07b"
+CLOSED = "#6b7280"
 ROW = "#252a33"
 HEAD = "#2b313c"
 
@@ -102,6 +105,31 @@ def apply_dark_theme(root: tk.Tk) -> ttk.Style:
     style.map("Accent.TButton", background=[("active", "#5ef0ad"), ("disabled", "#2a4a3a")])
     style.configure("TEntry", fieldbackground=FIELD, foreground=FG, insertcolor=FG)
     style.map("TEntry", fieldbackground=[("disabled", "#1a1d23")], foreground=[("disabled", MUTED)])
+    style.configure(
+        "TCheckbutton",
+        background=PANEL,
+        foreground=FG,
+        focuscolor=PANEL,
+    )
+    style.map(
+        "TCheckbutton",
+        background=[("active", PANEL)],
+        foreground=[("disabled", MUTED)],
+    )
+    style.configure(
+        "TCombobox",
+        fieldbackground=FIELD,
+        background=HEAD,
+        foreground=FG,
+        arrowcolor=FG,
+    )
+    style.map(
+        "TCombobox",
+        fieldbackground=[("readonly", FIELD), ("disabled", "#1a1d23")],
+        foreground=[("readonly", FG), ("disabled", MUTED)],
+    )
+    style.configure("TLabelframe", background=PANEL, foreground=FG)
+    style.configure("TLabelframe.Label", background=PANEL, foreground=FG)
     style.configure("TProgressbar", troughcolor=FIELD, background=ACCENT, bordercolor=HEAD)
     style.configure(
         "Treeview",

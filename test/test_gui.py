@@ -16,6 +16,7 @@ import json
 
 import pytest
 
+import analyze
 import gui
 import main
 
@@ -41,6 +42,42 @@ class FakeResponse:
 
     def __exit__(self, *exc):
         return False
+
+
+def _row_values(app, iid=None) -> dict:
+    if iid is None:
+        children = app.table.get_children()
+        assert children, "table is empty"
+        iid = children[0]
+    return dict(zip(app._columns, app.table.item(iid, "values")))
+
+
+def _bluf(
+    topic_id: str,
+    code: str,
+    title: str,
+    **extra: object,
+) -> dict:
+    row = {
+        "topicId": topic_id,
+        "code": code,
+        "title": title,
+        "client": extra.pop("client", "USAF"),
+        "program": extra.pop("program", "SBIR"),
+        "status": extra.pop("status", "Open"),
+        "opens": extra.pop("opens", "2026-10-28"),
+        "due": extra.pop("due", "2026-11-25"),
+        "dueIn": extra.pop("dueIn", "26d"),
+        "problem": extra.pop("problem", "Harness"),
+        "trl": extra.pop("trl", "—"),
+        "funding": extra.pop("funding", "—"),
+        "contract": extra.pop("contract", "Phase II"),
+        "pdf": extra.pop("pdf", "topic.pdf"),
+        "call": extra.pop("call", ""),
+        "note": extra.pop("note", ""),
+    }
+    row.update(extra)
+    return row
 
 
 def _topic(index: int, **extra: object) -> dict:
@@ -140,7 +177,7 @@ def test_gui_download_button_runs_full_flow(tmp_path, monkeypatch):
         pdfs = list(app.output_dir.glob("topic_*.pdf"))
         assert len(pdfs) == 2
         assert len(app.table.get_children()) == 2
-        assert "BLUF" in app.bluf_caption_var.get()
+        assert "shown /" in app.bluf_caption_var.get()
         assert app._chrome_collapsed is True
     finally:
         root.destroy()
@@ -191,7 +228,7 @@ def test_gui_table_find_and_dark_theme():
         app.table_filter_var.set("UAS")
         root.update()
         assert len(app.table.get_children()) == 1
-        assert app.table.item(app.table.get_children()[0], "values")[0] == "DAF27BZ01-DV011"
+        assert _row_values(app)["code"] == "DAF27BZ01-DV011"
         app._sort_by("code")
         root.update()
         assert app._sort_column == "code"
@@ -300,7 +337,7 @@ def test_gui_restores_last_snapshot(tmp_path):
         assert app.output_dir == snap
         assert len(app.table.get_children()) == 1
         assert app._chrome_collapsed is True
-        assert app.table.item(app.table.get_children()[0], "values")[0] == "DAF01"
+        assert _row_values(app)["code"] == "DAF01"
     finally:
         root.destroy()
 
@@ -345,7 +382,7 @@ def test_gui_chips_and_default_due_sort():
         ]
         app._render_table()
         root.update()
-        first = app.table.item(app.table.get_children()[0], "values")[0]
+        first = _row_values(app)["code"]
         assert first == "DAF27BZ01-DV011"
         app._chip_vars["DAF"].set(True)
         app._on_chips()
@@ -394,3 +431,229 @@ def test_gui_rejects_empty_folder(monkeypatch):
         assert app.finished is False
     finally:
         root.destroy()
+
+
+def test_gui_status_chips_do_not_change_download_phrase():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app._chip_vars["__open__"].set(True)
+        app._chip_vars["__due7__"].set(True)
+        app._chip_vars["__due14__"].set(True)
+        app._on_chips()
+        root.update()
+        assert app._chip_phrase() == ""
+        assert "Download all" in app.button_var.get()
+        app._chip_vars["DAF"].set(True)
+        app._on_chips()
+        root.update()
+        assert app._chip_phrase() == "DAF"
+        assert "matching" in app.button_var.get().lower()
+    finally:
+        root.destroy()
+
+
+def test_gui_open_and_due7_chips_exclude_closed_and_pre_release():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app._bluf_rows = [
+            _bluf("closed", "ARM00", "Old", status="Closed", dueIn="closed"),
+            _bluf("pre", "ARM01", "Soon pre", status="Pre-Release", dueIn="3d"),
+            _bluf("week", "DAF01", "This week", status="Open", dueIn="5d"),
+            _bluf("later", "DAF02", "Later", status="Open", dueIn="20d"),
+            _bluf("today", "DAF03", "Today", status="Open", dueIn="today"),
+        ]
+        app._chip_vars["__open__"].set(True)
+        app._chip_vars["__due7__"].set(True)
+        app._render_table()
+        root.update()
+        codes = {_row_values(app, iid)["code"] for iid in app.table.get_children()}
+        assert codes == {"DAF01", "DAF03"}
+        assert "due ≤7d" in app.bluf_caption_var.get()
+        assert "2 shown / 5 topics" in app.bluf_caption_var.get()
+    finally:
+        root.destroy()
+
+
+def test_gui_triage_filter_note_find_and_persist(tmp_path):
+    snap = tmp_path / "all_dsip_opportunities_20261030_120000"
+    snap.mkdir()
+    (snap / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [
+                    {"topicId": "t0", "topicCode": "DAF01", "topicTitle": "Illumination"},
+                    {"topicId": "t1", "topicCode": "ARM01", "topicTitle": "Armor"},
+                ],
+                "bluf": [
+                    _bluf("t0", "DAF01", "Illumination"),
+                    _bluf(
+                        "t1",
+                        "ARM01",
+                        "Armor",
+                        client="ARMY",
+                        status="Open",
+                        dueIn="3d",
+                        problem="Plate",
+                    ),
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    gui.STATE_FILE.write_text(
+        json.dumps({"parent": str(tmp_path), "last_output": str(snap)}),
+        encoding="utf-8",
+    )
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        root.update()
+        assert len(app.table.get_children()) == 2
+        app.table.selection_set("t0")
+        app._show_detail(app._row_by_iid("t0"))
+        app.note_var.set("Fits autonomy stack")
+        app._set_selected_triage("pursue")
+        app._show_detail(app._row_by_iid("t1"))
+        app._set_selected_triage("pass")
+        root.update()
+        by_id = {row["topicId"]: row for row in app._bluf_rows}
+        assert by_id["t0"]["call"] == "Pursue"
+        assert by_id["t0"]["note"] == "Fits autonomy stack"
+        assert by_id["t1"]["call"] == "Pass"
+        app.call_filter_var.set("Pursue")
+        app._render_table()
+        root.update()
+        assert len(app.table.get_children()) == 1
+        assert _row_values(app)["code"] == "DAF01"
+        assert _row_values(app)["call"] == "Pursue"
+        app.call_filter_var.set("All calls")
+        app.table_filter_var.set("autonomy")
+        app._render_table()
+        root.update()
+        assert len(app.table.get_children()) == 1
+        assert _row_values(app)["code"] == "DAF01"
+        saved = json.loads(gui.STATE_FILE.read_text(encoding="utf-8"))
+        assert saved["triage"]["t0"]["call"] == "pursue"
+        assert "autonomy" in saved["triage"]["t0"]["note"]
+        assert "bluf" not in saved
+    finally:
+        root.destroy()
+
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        root.update()
+        by_id = {row["topicId"]: row for row in app._bluf_rows}
+        assert by_id["t0"]["call"] == "Pursue"
+        assert "autonomy" in by_id["t0"]["note"]
+        assert by_id["t1"]["call"] == "Pass"
+    finally:
+        root.destroy()
+
+
+def test_gui_copy_brief_uses_local_clipboard():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        row = _bluf(
+            "t0",
+            "DAF27BZ01-DV011",
+            "Unmanned Aerial Systems",
+            call="Pursue",
+            note="Pitch Thursday",
+            funding="$2,000,000 (typical Direct to Phase II ceiling)",
+        )
+        app._bluf_rows = [row]
+        app._show_detail(row)
+        expected = analyze.format_capture_brief(app._selected_row)
+        assert "DAF27BZ01-DV011" in expected
+        assert "Call: Pursue" in expected
+        assert "Pitch Thursday" in expected
+        assert "typical" in expected
+        app._copy_selected_brief()
+        root.update()
+        try:
+            text = root.clipboard_get()
+        except Exception:
+            text = ""
+        if text:
+            assert "DAF27BZ01-DV011" in text
+            assert "Call: Pursue" in text
+            assert "Pitch Thursday" in text
+    finally:
+        root.destroy()
+
+
+def test_gui_item_done_keeps_selected_note():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        topic = {
+            "topicId": "t0",
+            "topicCode": "DAF01",
+            "topicTitle": "Illumination",
+            "topicStatus": "Open",
+            "component": "USAF",
+            "program": "SBIR",
+            "pdf": "topic_t0.pdf",
+            "pdfStatus": "pending",
+        }
+        app._handle_event(("catalog_ready", [topic]))
+        root.update()
+        app._show_detail(app._bluf_rows[0])
+        app.note_var.set("Keep after PDF")
+        old_row = app._selected_row
+        app._handle_event(
+            (
+                "item_done",
+                {
+                    "label": "topic PDF",
+                    "key": "t0",
+                    "outcome": {"status": "downloaded", "error": None},
+                },
+            )
+        )
+        root.update()
+        assert app._selected_row is not old_row
+        assert app._selected_row["note"] == "Keep after PDF"
+        assert app._triage["t0"]["note"] == "Keep after PDF"
+        assert app.note_var.get() == "Keep after PDF"
+        assert app._bluf_rows[0]["pdfStatus"] == "downloaded"
+        saved = json.loads(gui.STATE_FILE.read_text(encoding="utf-8"))
+        assert saved["triage"]["t0"]["note"] == "Keep after PDF"
+    finally:
+        root.destroy()
+
+
+def test_gui_triage_does_not_clobber_unbound_note():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        row = _bluf("t0", "DAF01", "Illumination", note="Keep me")
+        app._bluf_rows = [row]
+        app._triage["t0"] = {"call": "", "note": "Keep me"}
+        app._render_table()
+        app.table.selection_set("t0")
+        app._set_selected_triage("pursue")
+        root.update()
+        assert row["note"] == "Keep me"
+        assert app._triage["t0"]["note"] == "Keep me"
+        assert row["call"] == "Pursue"
+    finally:
+        root.destroy()
+
+
+def test_gui_sanitize_triage_drops_junk():
+    cleaned = gui.App._sanitize_triage(
+        {
+            "t0": {"call": "PURSUE", "note": "x" * 800},
+            "bad": "not-a-dict",
+            "empty": {"call": "nope", "note": ""},
+        }
+    )
+    assert cleaned["t0"]["call"] == "pursue"
+    assert len(cleaned["t0"]["note"]) == gui.analyze.NOTE_MAX
+    assert "bad" not in cleaned
+    assert "empty" not in cleaned

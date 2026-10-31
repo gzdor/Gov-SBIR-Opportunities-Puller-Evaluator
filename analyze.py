@@ -655,7 +655,150 @@ def open_local_pdf(output_dir: Path, relative: str) -> bool:
         return False
 
 
+NOTE_MAX = 400
+TRIAGE_VALUES = ("", "pursue", "watch", "pass")
+TRIAGE_LABELS = {
+    "": "",
+    "pursue": "Pursue",
+    "watch": "Watch",
+    "pass": "Pass",
+}
+
+
+def due_days_int(due_in: str | None) -> int | None:
+    """Parse a `days_until` label. Closed is -1; unknown is None."""
+    val = str(due_in or "").strip().lower()
+    if val in {"", "—", "-"}:
+        return None
+    if val == "today":
+        return 0
+    if val == "closed":
+        return -1
+    if val.endswith("d") and val[:-1].isdigit():
+        return int(val[:-1])
+    return None
+
+
+def is_open_status(status: str | None) -> bool:
+    return str(status or "").strip().lower().startswith("open")
+
+
+def is_pre_release_status(status: str | None) -> bool:
+    return str(status or "").strip().lower().startswith("pre")
+
+
+def normalize_triage(value: str | None) -> str:
+    raw = str(value or "").strip().lower()
+    if raw in TRIAGE_LABELS:
+        return raw
+    for key, label in TRIAGE_LABELS.items():
+        if label.lower() == raw:
+            return key
+    return ""
+
+
+def triage_label(value: str | None) -> str:
+    return TRIAGE_LABELS.get(normalize_triage(value), "")
+
+
+def urgency(row: dict) -> str:
+    days = due_days_int(row.get("dueIn"))
+    if days is None:
+        return "unknown"
+    if days < 0:
+        return "closed"
+    if days <= 7:
+        return "closing"
+    if days <= 14:
+        return "soon"
+    return "open"
+
+
+def pipeline_summary(rows: list[dict]) -> dict:
+    """Counts a BD manager glances at before opening a row."""
+    calls = Counter(normalize_triage(row.get("call")) for row in rows)
+    agencies: Counter[str] = Counter()
+    for row in rows:
+        client = str(row.get("client") or "—").split("/")[0].strip() or "—"
+        agencies[client] += 1
+    return {
+        "topics": len(rows),
+        "open": sum(1 for row in rows if is_open_status(row.get("status"))),
+        "pre_release": sum(1 for row in rows if is_pre_release_status(row.get("status"))),
+        "due_7": sum(
+            1
+            for row in rows
+            if (days := due_days_int(row.get("dueIn"))) is not None and 0 <= days <= 7
+        ),
+        "due_14": sum(
+            1
+            for row in rows
+            if (days := due_days_int(row.get("dueIn"))) is not None and 0 <= days <= 14
+        ),
+        "pursue": calls.get("pursue", 0),
+        "watch": calls.get("watch", 0),
+        "pass": calls.get("pass", 0),
+        "untagged": calls.get("", 0),
+        "clients": agencies,
+        "pdf_ready": sum(
+            1
+            for row in rows
+            if row.get("pdf") and row.get("pdfStatus") not in {"failed", "pending", None, ""}
+        ),
+        "pdf_failed": sum(1 for row in rows if row.get("pdfStatus") == "failed"),
+    }
+
+
+def format_pipeline_line(
+    summary: dict, shown: int, pending: bool = False
+) -> str:
+    n = int(summary.get("topics") or 0)
+    if n == 0:
+        return "No topics in this snapshot."
+    mix = " · ".join(
+        f"{count} {name}" for name, count in summary["clients"].most_common(6)
+    )
+    pdfs = f"PDFs {summary['pdf_ready']}/{n}"
+    if summary.get("pdf_failed"):
+        pdfs += f", {summary['pdf_failed']} failed"
+    extra = " · fetching PDFs" if pending and summary["pdf_ready"] < n else ""
+    return (
+        f"{shown} shown / {n} topics · {summary['open']} Open · "
+        f"{summary['due_7']} due ≤7d · {summary['due_14']} due ≤14d · "
+        f"{summary['pre_release']} Pre-Release · {summary['pursue']} Pursue · "
+        f"{pdfs} · {mix}{extra}"
+    )
+
+
+def format_capture_brief(row: dict) -> str:
+    """Paste-ready capture note for email or a BD tracker. Local only."""
+    call = triage_label(row.get("call"))
+    note = str(row.get("note") or "").strip()[:NOTE_MAX]
+    lines = [
+        f"{row.get('code') or '—'} — {row.get('title') or '—'}",
+        f"Client: {row.get('client') or '—'}",
+        (
+            f"Status: {row.get('status') or '—'} · "
+            f"Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})"
+        ),
+        (
+            f"Program: {row.get('program') or '—'} · "
+            f"Contract: {row.get('contract') or '—'}"
+        ),
+        f"Funding: {row.get('funding') or '—'}",
+    ]
+    if call:
+        lines.append(f"Call: {call}")
+    if note:
+        lines.append(f"Note: {note}")
+    problem = str(row.get("problem") or row.get("overview") or "").strip()
+    if problem:
+        lines.extend(["", problem])
+    return "\n".join(lines)
+
+
 BLUF_CSV_COLUMNS = (
+    "call",
     "code",
     "title",
     "client",
@@ -669,6 +812,7 @@ BLUF_CSV_COLUMNS = (
     "funding",
     "contract",
     "pdf",
+    "note",
 )
 
 

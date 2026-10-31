@@ -84,4 +84,7 @@ def test_snapshot_diff_by_code(tmp_path):
     )
     text = dest.read_text(encoding="utf-8")
     assert "DAF27BZ01-DV007" in text
-    assert "dueIn" in text.splitlines()[0]
+    header = text.splitlines()[0]
+    assert "dueIn" in header
+    assert "call" in header
+    assert "note" in header

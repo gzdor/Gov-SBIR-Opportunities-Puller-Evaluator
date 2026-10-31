@@ -126,3 +126,93 @@ def test_run_records_search_phrase_and_filters(monkeypatch, tmp_path):
     assert manifest["topicsRetrieved"] == 1
     assert manifest["topics"][0]["topicCode"] == "DAF01"
     assert manifest["bluf"]
+
+
+def test_due_days_int_and_urgency():
+    assert analyze.due_days_int("today") == 0
+    assert analyze.due_days_int("7d") == 7
+    assert analyze.due_days_int("closed") == -1
+    assert analyze.due_days_int("—") is None
+    assert analyze.urgency({"dueIn": "3d"}) == "closing"
+    assert analyze.urgency({"dueIn": "10d"}) == "soon"
+    assert analyze.urgency({"dueIn": "30d"}) == "open"
+    assert analyze.urgency({"dueIn": "closed"}) == "closed"
+    assert analyze.is_open_status("Open")
+    assert not analyze.is_open_status("Pre-Release")
+    assert analyze.is_pre_release_status("Pre-Release")
+
+
+def test_pipeline_summary_ignores_closed_in_due_windows():
+    rows = [
+        {"status": "Open", "dueIn": "2d", "client": "USAF", "call": "Pursue", "pdf": "a.pdf", "pdfStatus": "downloaded"},
+        {"status": "Open", "dueIn": "closed", "client": "USAF", "call": "", "pdf": "", "pdfStatus": "pending"},
+        {"status": "Pre-Release", "dueIn": "5d", "client": "ARMY", "call": "watch"},
+        {"status": "Open", "dueIn": "20d", "client": "NAVY / ONR", "call": "pass"},
+    ]
+    summary = analyze.pipeline_summary(rows)
+    assert summary["topics"] == 4
+    assert summary["open"] == 3
+    assert summary["pre_release"] == 1
+    assert summary["due_7"] == 2
+    assert summary["due_14"] == 2
+    assert summary["pursue"] == 1
+    assert summary["watch"] == 1
+    assert summary["pass"] == 1
+    assert summary["untagged"] == 1
+    assert summary["pdf_ready"] == 1
+    assert summary["clients"]["NAVY"] == 1
+    line = analyze.format_pipeline_line(summary, shown=2)
+    assert "2 shown / 4 topics" in line
+    assert "3 Open" in line
+    assert "2 due ≤7d" in line
+    assert "1 Pursue" in line
+    assert "PDFs 1/4" in line
+
+
+def test_format_capture_brief_and_triage_normalize():
+    assert analyze.normalize_triage("PURSUE") == "pursue"
+    assert analyze.normalize_triage("nope") == ""
+    assert analyze.triage_label("watch") == "Watch"
+    brief = analyze.format_capture_brief(
+        {
+            "code": "DAF27BZ01-DV011",
+            "title": "Unmanned Aerial Systems",
+            "client": "USAF",
+            "status": "Open",
+            "due": "2026-11-25",
+            "dueIn": "26d",
+            "program": "SBIR",
+            "contract": "Direct to Phase II",
+            "funding": "$2,000,000 (typical Direct to Phase II ceiling)",
+            "call": "pursue",
+            "note": "Pitch Thursday",
+            "problem": "Need a reusable harness.",
+        }
+    )
+    assert brief.startswith("DAF27BZ01-DV011 — Unmanned Aerial Systems")
+    assert "Call: Pursue" in brief
+    assert "Note: Pitch Thursday" in brief
+    assert "typical" in brief
+    assert "Need a reusable harness." in brief
+
+
+def test_write_bluf_csv_includes_call_and_note(tmp_path):
+    dest = tmp_path / "bluf.csv"
+    analyze.write_bluf_csv(
+        [
+            {
+                "code": "DAF01",
+                "title": "Illumination",
+                "call": "Pursue",
+                "note": "Fits autonomy",
+                "dueIn": "5d",
+            }
+        ],
+        dest,
+    )
+    text = dest.read_text(encoding="utf-8")
+    header = text.splitlines()[0]
+    assert header.startswith("call,code,")
+    assert "note" in header.split(",")
+    assert "Pursue" in text
+    assert "Fits autonomy" in text

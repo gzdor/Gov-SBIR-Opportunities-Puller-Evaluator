@@ -45,6 +45,15 @@ Objections that changed the design are marked **fixed**.
 | A19 | “Beat GovWin” by adding alerts + SAM | **Rejected** | Scope is DSIP open-topics appliance |
 | A20 | User phrase compiled as regex / ReDoS | **Fixed earlier** | `phrase_tokens` only |
 | A21 | **Find in table** as raw substring would miss `UAS` again | **Fixed** | Same `query_groups` / `topic_matches_groups` as the download filter, plus substring for codes/amounts |
+| A22 | Write BD calls into `manifest.json` | **Rejected** | `STATE_FILE` only; see [006](006-bd-triage-pipeline.md) |
+| A23 | Sync triage to GovWin / a CRM | **Rejected** | Local snapshot appliance |
+| A24 | Cloud LLM fit score | **Rejected** | Human Pursue/Watch/Pass |
+| A26 | Global `1`/`2`/`3` binds steal Find-box keystrokes | **Fixed** | Table-only bindings |
+| A27 | Open / due chips leak into the download phrase | **Fixed** | `__*` keys excluded from `_chip_phrase` |
+| A28 | Closed topics appear in due ≤7d / ≤14d | **Fixed** | `due_days_int("closed") == -1` |
+| A31 | Public unsigned `.exe` for BD distribution | **Rejected** | Artifact-only |
+| A36 | PDF-link cyan hid closing-soon color | **Fixed** | Urgency / Pursue tags only |
+| A38 | Catalog-first PDF refresh wiped an in-progress note | **Fixed** | Commit + rebind selected row from `_triage` |
 
 ## Architecture of the review loop
 

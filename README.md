@@ -6,7 +6,7 @@ Downloads the current public [DoD SBIR/STTR DSIP topics catalog](https://www.dod
 
 ## What it looks like
 
-Pick a folder, click **Download all opportunities**, and the **BLUF table** fills as soon as the catalog lands (codes, titles, due dates). After the run, download settings collapse so the table owns the window. Use **Narrow** chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `due < 14d`) or **Find in snapshot** without another download. Rows sort Open first, then soonest due. Click a row for the topic pane (full objective, **Open PDF**, **Copy code**). **Open snapshot…** reloads a previous folder; the last snapshot is restored on the next launch.
+Pick a folder, click **Download all opportunities**, and the **BLUF table** fills as soon as the catalog lands (codes, titles, due dates). After the run, download settings collapse so the table owns the window. The caption is a pipeline strip (Open, due ≤7d / ≤14d, Pursue). Use **Narrow** chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `Open`, `due < 7d`, `due < 14d`) or **Find in snapshot** without another download. Mark **Pursue / Watch / Pass** (keys `1` `2` `3` on the table), add a one-line note, and **Copy brief** for email. Calls stay in `~/.dsip_downloader_state.json`, not in `manifest.json`. Rows sort Open first, then soonest due; closing-soon rows are amber. **Open snapshot…** reloads a previous folder; the last snapshot and your calls are restored on the next launch.
 
 ![DSIP Opportunities Puller & Evaluator after a completed run: collapsed settings, alias chips, BLUF table, and topic detail pane](docs/images/app-window.jpg)
 
@@ -258,14 +258,14 @@ For a point-and-click experience there is a small desktop app, `gui.py`, built w
 2. Optionally type a **download filter**. Leave it blank to pull every open topic. A non-empty phrase filters the catalog **on this machine** with AND-of-OR aliases (`DAF` = Air Force/USAF, `UAS` = unmanned aerial/drone). The phrase is never sent to DSIP and never to a cloud model. Use **Download settings** if that panel is collapsed.
 3. Click **Download all opportunities** (or **Download matching opportunities** when a phrase or chip is set).
 4. The **BLUF table** fills as soon as the catalog JSON arrives; TRL/funding fill as each topic PDF lands. After the run, folder/filter/log collapse so the table and topic pane own the window.
-5. **Narrow** with chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `due < 14d`) or **Find in snapshot**. Default sort is Open first, then soonest due. Click a row for the full objective, **Open PDF**, and **Copy code**.
-6. **Open snapshot…** reloads a previous `manifest.json`. The last folder is restored on the next launch. **Export CSV** writes the visible rows. **Open folder** opens the save location (no blocking dialog). **Ctrl +** / **Ctrl −** zoom the UI text.
+5. **Narrow** with chips (`DAF`, `Navy`, `Army`, `UAS`, `D2P2`, `Open`, `due < 7d`, `due < 14d`) or **Find in snapshot**. Filter **Calls** to the topics you marked. Default sort is Open first, then soonest due. Click a row for the objective, **Open PDF**, **Copy code**, **Copy brief**, and Pursue / Watch / Pass. Keys `1` / `2` / `3` / `0` work when the table is focused.
+6. **Open snapshot…** reloads a previous `manifest.json`. The last folder and your local calls/notes are restored on the next launch. **Export CSV** writes the visible rows, including `call` and `note`. **Open folder** opens the save location (no blocking dialog). **Ctrl +** / **Ctrl −** zoom the UI text.
 
 The app creates a timestamped `all_dsip_opportunities_YYYYMMDD_HHMMSS` subfolder and writes the PDFs, `manifest.json`, and a `bluf` array in the manifest. PDF text extraction for objective / TRL / funding uses optional local `pypdf` (`pip install pypdf`). If `pypdf` is missing, catalog columns still fill and those three fields show as "—". No cloud AI is used.
 
 The download runs on a background thread so the window stays responsive. Download logic stays in `main.py`.
 
-This is a **local DSIP open-topics appliance**, not a GovWin / HigherGov / GovTribe clone: no seat license, no cloud AI, no SAM-wide CRM. Why that split exists, how alias search works, why GovWin and state/county scrapes stay out, and the adversarial review of those choices are in [`docs/design-decisions/`](docs/design-decisions/) (see [ADR 005](docs/design-decisions/005-multi-source-modes.md) for the multi-source BLUF).
+This is a **local DSIP open-topics appliance**, not a GovWin / HigherGov / GovTribe clone: no seat license, no cloud AI, no SAM-wide CRM. Why that split exists, how alias search works, why GovWin and state/county scrapes stay out, the local Pursue/Watch/Pass board, and the adversarial review of those choices are in [`docs/design-decisions/`](docs/design-decisions/) (see [ADR 005](docs/design-decisions/005-multi-source-modes.md) and [ADR 006](docs/design-decisions/006-bd-triage-pipeline.md)).
 
 Run it from source:
 
@@ -340,7 +340,7 @@ cd /d C:\Users\zdorg\code_dev\Gov-SBIR-Opportunities-Puller-Evaluator
 pytest
 ```
 
-The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, catalog-first table fill, last-snapshot restore, chips, due-in sort, dark theme, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
+The tests live in `test/` (`test_main.py`, `test_analyze.py`, `test_aliases.py`, `test_gui.py`). They cover filename cleanup, paging, PDF header checks, GUI download flow, catalog-first table fill, last-snapshot restore, chips, due-in sort, pipeline counts, triage persist/filter, copy-brief, dark theme, and alias search (`DAF`, `UAS`, `Air Force`, AND-of-OR, `AI` ≠ `Domain`). Search and download calls are stubbed, so pytest does not contact DSIP.
 
 ## Will a run get every topic?
 

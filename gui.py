@@ -18,7 +18,6 @@ import queue
 import sys
 import threading
 import traceback
-from collections import Counter
 from pathlib import Path
 
 import tkinter as tk
@@ -36,8 +35,12 @@ CHIP_SPECS = (
     ("Army", "Army"),
     ("UAS", "UAS"),
     ("D2P2", "D2P2"),
+    ("Open", "__open__"),
+    ("due < 7d", "__due7__"),
     ("due < 14d", "__due14__"),
 )
+DOWNLOAD_CHIP_KEYS = {key for _, key in CHIP_SPECS if not str(key).startswith("__")}
+CALL_FILTERS = ("All calls", "Pursue", "Watch", "Pass", "Untagged")
 
 
 class QueueReporter:
@@ -102,13 +105,18 @@ class App:
         )
         self.button_var = tk.StringVar(value="Download all opportunities")
         self.detail_title_var = tk.StringVar(
-            value="Double-click a row for the full objective."
+            value="Select a row for the objective, then mark Pursue / Watch / Pass."
         )
+        self.call_filter_var = tk.StringVar(value="All calls")
+        self.note_var = tk.StringVar(value="")
         self._bluf_rows: list[dict] = []
         self._topics_for_diff: list[dict] = []
+        self._triage: dict[str, dict[str, str]] = {}
         self._sort_column = ""
         self._sort_reverse = False
         self._zoom = 1.0
+        self._note_loading = False
+        self._note_bound_key = ""
         self._chip_vars: dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=False) for _, key in CHIP_SPECS
         }
@@ -117,6 +125,7 @@ class App:
         self._bind_zoom()
         self.filter_var.trace_add("write", self._sync_button_label)
         self.table_filter_var.trace_add("write", lambda *_: self._render_table())
+        self.call_filter_var.trace_add("write", lambda *_: self._render_table())
         self._restore_state()
 
     # ---- UI construction -------------------------------------------------
@@ -221,13 +230,27 @@ class App:
                 variable=self._chip_vars[key],
                 command=self._on_chips,
             ).grid(row=0, column=index, sticky="w", padx=6)
+        ttk.Label(chips, text="Calls:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        self.call_filter = ttk.Combobox(
+            chips,
+            textvariable=self.call_filter_var,
+            values=CALL_FILTERS,
+            state="readonly",
+            width=12,
+        )
+        self.call_filter.grid(row=1, column=1, sticky="w", padx=6, pady=(4, 0))
+        ttk.Label(
+            chips,
+            text="1 Pursue · 2 Watch · 3 Pass · 0 clear   (table focused)",
+            style="Hint.TLabel",
+        ).grid(row=1, column=2, columnspan=8, sticky="w", pady=(4, 0))
 
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
             row=7, column=0, columnspan=2, sticky="w", padx=10
         )
         ttk.Label(
             frame,
-            text="Double-click a row for details. Ctrl + / Ctrl − zoom.",
+            text="Select a row for details. Ctrl + / Ctrl − zoom.",
             style="Hint.TLabel",
         ).grid(row=7, column=2, sticky="e", padx=10)
 
@@ -265,6 +288,7 @@ class App:
         table_frame.rowconfigure(0, weight=1)
 
         columns = (
+            "call",
             "code",
             "title",
             "client",
@@ -284,6 +308,7 @@ class App:
             table_frame, columns=columns, show="headings", selectmode="browse"
         )
         headings = {
+            "call": ("Call", 70),
             "code": ("Code", 130),
             "title": ("Topic", 200),
             "client": ("Client", 110),
@@ -301,8 +326,13 @@ class App:
         for key, (label, width) in headings.items():
             self.table.heading(key, text=label, command=lambda c=key: self._sort_by(c))
             stretch = key in {"title", "problem"}
-            self.table.column(key, width=width, minwidth=50, stretch=stretch)
-        self.table.tag_configure("pdflink", foreground=theme.LINK)
+            self.table.column(key, width=width, minwidth=40, stretch=stretch)
+        self.table.tag_configure("closing", foreground=theme.WARN)
+        self.table.tag_configure("soon", foreground=theme.SOON)
+        self.table.tag_configure("closed", foreground=theme.CLOSED)
+        self.table.tag_configure("open", foreground=theme.FG)
+        self.table.tag_configure("unknown", foreground=theme.FG)
+        self.table.tag_configure("pursue", foreground=theme.ACCENT)
         self.table.grid(row=0, column=0, sticky="nsew")
         yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.table.yview)
         xscroll = ttk.Scrollbar(
@@ -314,6 +344,10 @@ class App:
         self.table.bind("<Button-1>", self._on_table_click)
         self.table.bind("<Double-1>", self._on_table_double)
         self.table.bind("<Return>", self._on_table_activate)
+        self.table.bind("<Key-1>", lambda _e: self._set_selected_triage("pursue"))
+        self.table.bind("<Key-2>", lambda _e: self._set_selected_triage("watch"))
+        self.table.bind("<Key-3>", lambda _e: self._set_selected_triage("pass"))
+        self.table.bind("<Key-0>", lambda _e: self._set_selected_triage(""))
 
         detail = ttk.LabelFrame(pane, text="Topic", padding=8)
         detail.columnconfigure(0, weight=1)
@@ -334,12 +368,39 @@ class App:
         )
         self.detail_text.grid(row=1, column=0, columnspan=3, sticky="nsew")
         detail.rowconfigure(1, weight=1)
-        self.open_pdf_btn = ttk.Button(detail, text="Open PDF", command=self._open_selected_pdf)
-        self.open_pdf_btn.grid(row=2, column=0, sticky="w", pady=(6, 0))
-        self.copy_code_btn = ttk.Button(
-            detail, text="Copy code", command=self._copy_selected_code
+        actions = ttk.Frame(detail)
+        actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
+        self.open_pdf_btn = ttk.Button(
+            actions, text="Open PDF", command=self._open_selected_pdf
         )
-        self.copy_code_btn.grid(row=2, column=1, sticky="w", padx=8, pady=(6, 0))
+        self.open_pdf_btn.grid(row=0, column=0, sticky="w")
+        self.copy_code_btn = ttk.Button(
+            actions, text="Copy code", command=self._copy_selected_code
+        )
+        self.copy_code_btn.grid(row=0, column=1, sticky="w", padx=6)
+        self.copy_brief_btn = ttk.Button(
+            actions, text="Copy brief", command=self._copy_selected_brief
+        )
+        self.copy_brief_btn.grid(row=0, column=2, sticky="w", padx=6)
+        self.pursue_btn = ttk.Button(
+            actions, text="Pursue", command=lambda: self._set_selected_triage("pursue")
+        )
+        self.pursue_btn.grid(row=0, column=3, sticky="w", padx=(16, 4))
+        self.watch_btn = ttk.Button(
+            actions, text="Watch", command=lambda: self._set_selected_triage("watch")
+        )
+        self.watch_btn.grid(row=0, column=4, sticky="w", padx=4)
+        self.pass_btn = ttk.Button(
+            actions, text="Pass", command=lambda: self._set_selected_triage("pass")
+        )
+        self.pass_btn.grid(row=0, column=5, sticky="w", padx=4)
+        ttk.Label(detail, text="Note (stays on this machine):").grid(
+            row=3, column=0, sticky="w", pady=(8, 0)
+        )
+        self.note_entry = ttk.Entry(detail, textvariable=self.note_var)
+        self.note_entry.grid(row=4, column=0, columnspan=3, sticky="ew", pady=(2, 0))
+        self.note_entry.bind("<FocusOut>", lambda _e: self._commit_note())
+        self.note_entry.bind("<Return>", lambda _e: self._commit_note())
 
         pane.add(table_frame, weight=4)
         pane.add(detail, weight=1)
@@ -502,6 +563,7 @@ class App:
         for row, topic in zip(self._bluf_rows, self._topics_for_diff):
             row["pdf"] = topic.get("pdf") or ""
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
+            self._stamp_triage(row)
         self._render_table()
         self._refresh_caption(pending=True)
         self._save_state()
@@ -523,13 +585,16 @@ class App:
         if error:
             topic["pdf"] = None
             topic["pdfError"] = error
+        self._commit_note()
         for index, row in enumerate(self._bluf_rows):
             if str(row.get("topicId")) == key:
                 refreshed = analyze.bluf_row(topic, self.output_dir)
                 refreshed["pdfStatus"] = topic.get("pdfStatus") or ""
+                self._stamp_triage(refreshed)
                 self._bluf_rows[index] = refreshed
                 break
         self._render_table()
+        self._rebind_selected()
         self._refresh_caption(pending=True)
 
     def _on_finished(self, code: int) -> None:
@@ -582,9 +647,6 @@ class App:
         self.browse_btn.configure(state=state)
         self.folder_entry.configure(state=state)
         self.filter_entry.configure(state=state)
-        self.table_filter_entry.configure(state=state)
-        self.export_btn.configure(state=state)
-        self.diff_btn.configure(state=state)
         self.open_snapshot_btn.configure(state=state)
 
     def _sync_button_label(self, *_args: object) -> None:
@@ -597,7 +659,7 @@ class App:
         parts = [
             key
             for _, key in CHIP_SPECS
-            if key != "__due14__" and self._chip_vars[key].get()
+            if key in DOWNLOAD_CHIP_KEYS and self._chip_vars[key].get()
         ]
         return " ".join(parts)
 
@@ -628,6 +690,7 @@ class App:
         parent = payload.get("parent")
         if parent:
             self.folder_var.set(str(parent))
+        self._triage = self._sanitize_triage(payload.get("triage"))
         last = payload.get("last_output")
         if last and (Path(last) / "manifest.json").is_file():
             self.output_dir = Path(last)
@@ -639,6 +702,7 @@ class App:
         payload = {
             "parent": self.folder_var.get().strip(),
             "last_output": str(self.output_dir) if self.output_dir else "",
+            "triage": self._triage,
         }
         try:
             STATE_FILE.write_text(
@@ -646,6 +710,51 @@ class App:
             )
         except OSError:
             pass
+
+    @staticmethod
+    def _sanitize_triage(raw: object) -> dict[str, dict[str, str]]:
+        if not isinstance(raw, dict):
+            return {}
+        cleaned: dict[str, dict[str, str]] = {}
+        for key, rec in raw.items():
+            if not isinstance(rec, dict):
+                continue
+            call = analyze.normalize_triage(rec.get("call"))
+            note = str(rec.get("note") or "")[: analyze.NOTE_MAX]
+            if call or note:
+                cleaned[str(key)] = {"call": call, "note": note}
+        return cleaned
+
+    @staticmethod
+    def _triage_key(row: dict) -> str:
+        return str(row.get("topicId") or row.get("code") or "")
+
+    def _stamp_triage(self, row: dict) -> None:
+        rec = self._triage.get(self._triage_key(row)) or {}
+        call = rec.get("call") or analyze.normalize_triage(row.get("call"))
+        note = rec.get("note") if rec.get("note") not in (None, "") else str(row.get("note") or "")
+        row["call"] = analyze.triage_label(call)
+        row["note"] = str(note or "")[: analyze.NOTE_MAX]
+
+    def _rebind_selected(self) -> None:
+        """Point `_selected_row` at the current `_bluf_rows` object after a refresh."""
+        if not self._selected_row:
+            return
+        key = self._triage_key(self._selected_row)
+        if not key:
+            return
+        fresh = next(
+            (row for row in self._bluf_rows if self._triage_key(row) == key),
+            None,
+        )
+        if fresh is None:
+            return
+        self._selected_row = fresh
+        iid = str(fresh.get("topicId") or "")
+        if iid and self.table.exists(iid):
+            self.table.selection_set(iid)
+            self.table.focus(iid)
+        self._refresh_detail(fresh)
 
     def _load_bluf_table(self) -> None:
         self._clear_table()
@@ -664,9 +773,21 @@ class App:
             analyze.bluf_row(topic, self.output_dir)
             for topic in payload.get("topics") or []
         ]
+        self._commit_note()
+        selected_key = self._triage_key(self._selected_row) if self._selected_row else ""
         self._bluf_rows = rows
         self._topics_for_diff = payload.get("topics") or []
+        for row in self._bluf_rows:
+            self._stamp_triage(row)
         self._render_table()
+        if selected_key:
+            rebound = next(
+                (row for row in self._bluf_rows if self._triage_key(row) == selected_key),
+                None,
+            )
+            if rebound is not None:
+                self._selected_row = rebound
+                self._refresh_detail(rebound)
         phrase = payload.get("searchPhrase")
         if not rows and phrase:
             self.bluf_caption_var.set(f'No topics matched "{phrase}".')
@@ -674,34 +795,22 @@ class App:
             self._refresh_caption()
 
     def _refresh_caption(self, pending: bool = False) -> None:
-        n = len(self._bluf_rows)
-        if n == 0:
+        if not self._bluf_rows:
             self.bluf_caption_var.set("No topics in this snapshot.")
             return
-        ready = sum(
-            1
-            for row in self._bluf_rows
-            if row.get("pdf")
-            and row.get("pdfStatus") not in {"failed", "pending", None, ""}
+        self.bluf_caption_var.set(
+            analyze.format_pipeline_line(
+                analyze.pipeline_summary(self._bluf_rows),
+                shown=len(self._visible_rows()),
+                pending=pending,
+            )
         )
-        failed = sum(1 for row in self._bluf_rows if row.get("pdfStatus") == "failed")
-        agencies = Counter()
-        for row in self._bluf_rows:
-            client = str(row.get("client") or "—").split("/")[0].strip()
-            agencies[client or "—"] += 1
-        mix = " · ".join(f"{count} {name}" for name, count in agencies.most_common(6))
-        shown = len(self._visible_rows())
-        prefix = f"BLUF ({shown} shown / {n} topics)"
-        pdfs = f"PDFs {ready}/{n}"
-        if failed:
-            pdfs += f", {failed} failed"
-        extra = " · fetching PDFs" if pending and ready < n else ""
-        self.bluf_caption_var.set(f"{prefix} · {pdfs} · {mix}{extra}")
 
     def _row_matches_find(
         self, row: dict, needle: str, groups: list[list[str]]
     ) -> bool:
-        blob = " ".join(str(row.get(col) or "") for col in self._columns).lower()
+        blob = " ".join(str(row.get(col) or "") for col in self._columns)
+        blob = f"{blob} {row.get('note') or ''}".lower()
         if needle.lower() in blob:
             return True
         fake = {
@@ -715,29 +824,47 @@ class App:
         }
         return analyze.topic_matches_groups(fake, groups)
 
-    @staticmethod
-    def _due_days(row: dict) -> int | None:
-        val = str(row.get("dueIn") or "")
-        if val == "today":
-            return 0
-        if val.endswith("d") and val[:-1].isdigit():
-            return int(val[:-1])
-        return None
+    def _due_in_window(self, row: dict, limit: int) -> bool:
+        days = analyze.due_days_int(row.get("dueIn"))
+        return days is not None and 0 <= days <= limit
 
     def _visible_rows(self) -> list[dict]:
         rows = list(self._bluf_rows)
         for _, key in CHIP_SPECS:
-            if key == "__due14__" or not self._chip_vars[key].get():
+            if key.startswith("__") or not self._chip_vars[key].get():
                 continue
             groups = analyze.query_groups(key)
             rows = [
                 row for row in rows if self._row_matches_find(row, key, groups)
             ]
+        if self._chip_vars["__open__"].get():
+            rows = [row for row in rows if analyze.is_open_status(row.get("status"))]
+        if self._chip_vars["__due7__"].get():
+            rows = [row for row in rows if self._due_in_window(row, 7)]
         if self._chip_vars["__due14__"].get():
+            rows = [row for row in rows if self._due_in_window(row, 14)]
+        wanted = self.call_filter_var.get()
+        if wanted == "Pursue":
             rows = [
                 row
                 for row in rows
-                if self._due_days(row) is not None and self._due_days(row) <= 14
+                if analyze.normalize_triage(row.get("call")) == "pursue"
+            ]
+        elif wanted == "Watch":
+            rows = [
+                row
+                for row in rows
+                if analyze.normalize_triage(row.get("call")) == "watch"
+            ]
+        elif wanted == "Pass":
+            rows = [
+                row
+                for row in rows
+                if analyze.normalize_triage(row.get("call")) == "pass"
+            ]
+        elif wanted == "Untagged":
+            rows = [
+                row for row in rows if not analyze.normalize_triage(row.get("call"))
             ]
         needle = self.table_filter_var.get().strip()
         if needle:
@@ -777,20 +904,24 @@ class App:
             return (3, 0, val.lower())
         return (0, 0, val.lower())
 
+    def _cell(self, row: dict, column: str) -> str:
+        if column == "call":
+            return analyze.triage_label(row.get("call"))
+        return str(row.get(column) or "—")
+
     def _render_table(self) -> None:
         self._clear_table()
         for index, row in enumerate(self._visible_rows()):
-            tags = ("pdflink",) if row.get("pdf") and row.get("pdfStatus") not in {
-                "failed",
-                "pending",
-            } else ()
+            tags = [analyze.urgency(row)]
+            if analyze.normalize_triage(row.get("call")) == "pursue":
+                tags.append("pursue")
             iid = str(row.get("topicId") or f"row-{index}")
             self.table.insert(
                 "",
                 "end",
                 iid=iid,
-                values=tuple(row.get(col) or "—" for col in self._columns),
-                tags=tags,
+                values=tuple(self._cell(row, col) for col in self._columns),
+                tags=tuple(tags),
             )
         if self._bluf_rows:
             self._refresh_caption()
@@ -857,15 +988,22 @@ class App:
         return None
 
     def _show_detail(self, row: dict) -> None:
+        self._commit_note()
+        self._refresh_detail(row)
+
+    def _refresh_detail(self, row: dict) -> None:
+        self._stamp_triage(row)
         self._selected_row = row
         title = f"{row.get('code') or '—'}  ·  {row.get('title') or '—'}"
         self.detail_title_var.set(title)
+        call = analyze.triage_label(row.get("call")) or "—"
         body = "\n".join(
             [
                 f"Client: {row.get('client') or '—'}",
                 f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
                 f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
                 f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
+                f"Call: {call}",
                 f"PDF: {row.get('pdf') or '—'}",
                 "",
                 str(row.get("problem") or row.get("overview") or "—"),
@@ -875,6 +1013,10 @@ class App:
         self.detail_text.delete("1.0", "end")
         self.detail_text.insert("1.0", body)
         self.detail_text.configure(state="disabled")
+        self._note_loading = True
+        self.note_var.set(str(row.get("note") or ""))
+        self._note_bound_key = self._triage_key(row)
+        self._note_loading = False
 
     def _on_table_activate(self, _event: tk.Event | None = None) -> str:
         selection = self.table.selection()
@@ -920,6 +1062,69 @@ class App:
         self.root.clipboard_clear()
         self.root.clipboard_append(code)
         self._append_log(f"Copied {code}")
+
+    def _copy_selected_brief(self) -> None:
+        self._commit_note()
+        row = self._selected_row
+        if not row:
+            return
+        brief = analyze.format_capture_brief(row)
+        self.root.clipboard_clear()
+        self.root.clipboard_append(brief)
+        self._append_log(f"Copied brief for {row.get('code') or 'topic'}")
+
+    def _selected_or_table_row(self) -> dict | None:
+        if self._selected_row:
+            return self._selected_row
+        selection = self.table.selection()
+        if selection:
+            return self._row_by_iid(selection[0])
+        return None
+
+    def _set_selected_triage(self, call: str) -> str:
+        row = self._selected_or_table_row()
+        if not row:
+            return "break"
+        key = self._triage_key(row)
+        if not key:
+            return "break"
+        rec = dict(self._triage.get(key) or {})
+        rec["call"] = analyze.normalize_triage(call)
+        rec["note"] = str(row.get("note") or rec.get("note") or "")[: analyze.NOTE_MAX]
+        if not rec["call"] and not rec["note"]:
+            self._triage.pop(key, None)
+        else:
+            self._triage[key] = rec
+        row["call"] = analyze.triage_label(rec.get("call"))
+        row["note"] = rec["note"]
+        self._save_state()
+        self._render_table()
+        iid = str(row.get("topicId") or "")
+        if iid and self.table.exists(iid):
+            self.table.selection_set(iid)
+            self.table.focus(iid)
+        self._show_detail(row)
+        return "break"
+
+    def _commit_note(self) -> None:
+        if self._note_loading:
+            return
+        row = self._selected_row
+        if not row:
+            return
+        key = self._triage_key(row)
+        if not key or key != self._note_bound_key:
+            return
+        note = self.note_var.get().strip()[: analyze.NOTE_MAX]
+        rec = dict(self._triage.get(key) or {})
+        rec["call"] = analyze.normalize_triage(rec.get("call") or row.get("call"))
+        rec["note"] = note
+        if not rec["call"] and not rec["note"]:
+            self._triage.pop(key, None)
+        else:
+            self._triage[key] = rec
+        row["note"] = note
+        self._save_state()
 
     def _on_table_click(self, event: tk.Event) -> None:
         if self.table.identify_region(event.x, event.y) != "cell":
