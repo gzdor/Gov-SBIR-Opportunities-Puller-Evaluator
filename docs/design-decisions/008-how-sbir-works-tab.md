@@ -23,8 +23,10 @@ dependency and a lead-gen surface.
    “third-party / unaffiliated.” Official DSIP, SBIR.gov, SAM.gov, and AFWERX
    links come first. Only `https://` URLs open in the system browser.
 4. Do **not** paste their marketing, contact block, or “free funding report.”
-5. Do **not** freeze their release counts or close dates in our copy — those
-   go stale; the Catalog tab is the live list.
+5. Do **not** freeze InvesTech’s release counts. A **dated FY27 monthly
+   calendar snapshot** may live in this tab, labeled as a snapshot, with
+   navysbir.com as a citation only. Confirm every deadline on DSIP. **Never
+   scrape navysbir.com.**
 
 ## Why
 

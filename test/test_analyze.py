@@ -231,6 +231,43 @@ def test_load_qa_excerpt_rejects_traversal_and_non_json(tmp_path):
     assert "Q: Hi" in analyze.load_qa_excerpt(tmp_path, "qa/ok.json")
 
 
+def test_load_json_under_and_full_qa_excerpt(tmp_path):
+    import json
+
+    secret = tmp_path.parent / "secret.json"
+    secret.write_text('{"secret": true}', encoding="utf-8")
+    (tmp_path / "details").mkdir()
+    good = tmp_path / "details" / "ok.json"
+    good.write_text(json.dumps({"objective": "Build a radio."}), encoding="utf-8")
+    assert analyze.load_json_under(tmp_path, "../secret.json") is None
+    assert analyze.load_json_under(tmp_path, "details/ok.json")["objective"] == "Build a radio."
+    items = [
+        {"question": f"Q{i}?", "answers": []}
+        for i in range(5)
+    ]
+    assert analyze.format_qa_excerpt(items).count("Q:") == 3
+    assert analyze.format_qa_excerpt(items, limit=None).count("Q:") == 5
+
+
+def test_topic_overview_paragraph_is_local_extractive():
+    details = {
+        "objective": "Develop a reusable illumination system for high-speed photo-optic collection at the test track.",
+        "description": "Legacy flash bulbs are out of production and must be replaced with a reusable source that survives multiple shots.",
+        "itar": "N",
+    }
+    row = {"title": "Reusable Illumination System", "code": "DAF01"}
+    para = analyze.topic_overview_paragraph(row, details=details)
+    assert "Reusable Illumination System" in para
+    assert "illumination" in para.lower()
+    assert analyze.itar_flag("N") is False
+    assert analyze.itar_flag("Y") is True
+    assert analyze.itar_flag("") is False
+    row = {"due": "2026-11-25", "dueIn": "99d"}
+    analyze.refresh_due_in(row)
+    assert row["dueIn"] != "99d"
+    assert row["dueIn"] in {"closed", "today"} or row["dueIn"].endswith("d")
+
+
 def test_write_bluf_csv_includes_call_and_note(tmp_path):
     dest = tmp_path / "bluf.csv"
     analyze.write_bluf_csv(

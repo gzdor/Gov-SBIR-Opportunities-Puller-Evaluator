@@ -19,6 +19,10 @@ LINKS = (
     ("SBA Company Registry", "https://www.sbir.gov/registration"),
     ("AFWERX funding vehicles", "https://afwerx.com/"),
     (
+        "DoW FY27 solicitation calendar citation (confirm dates on DSIP)",
+        "https://www.navysbir.com/solicitations.htm",
+    ),
+    (
         "Third-party AFWERX/open-topic explainer (unaffiliated)",
         "https://investech-consulting.com/programs/afwerx-sbir/",
     ),
@@ -110,6 +114,29 @@ SECTIONS: tuple[tuple[str, str], ...] = (
         "close is not the end of that technology area — watch the next "
         "snapshot, not one topic ID. Use Component chips, Has Q&A, and "
         "due-in columns to plan the week.",
+    ),
+    (
+        "FY27 monthly calendar (snapshot, not a scrape)",
+        "This table is a dated snapshot of the published FY 2027 monthly "
+        "release calendar (updated 28 Sep 2026 on the Navy SBIR "
+        "solicitations page). Confirm every deadline on DSIP before you "
+        "staff a bid. This app never scrapes navysbir.com.\n"
+        "Release 1: pre-release 7 Oct 2026, opens 28 Oct 2026, closes "
+        "25 Nov 2026.\n"
+        "Release 2: 4 Nov 2026 / 2 Dec 2026 / 6 Jan 2027.\n"
+        "Release 3: 2 Dec 2026 / 6 Jan 2027 / 3 Feb 2027.\n"
+        "Release 4: 6 Jan 2027 / 27 Jan 2027 / 24 Feb 2027.\n"
+        "Release 5: 3 Feb 2027 / 24 Feb 2027 / 24 Mar 2027.\n"
+        "Release 6: 3 Mar 2027 / 24 Mar 2027 / 21 Apr 2027.\n"
+        "Release 7: 7 Apr 2027 / 28 Apr 2027 / 26 May 2027.\n"
+        "Release 8: 5 May 2027 / 26 May 2027 / 23 Jun 2027.\n"
+        "Release 9: 2 Jun 2027 / 23 Jun 2027 / 21 Jul 2027.\n"
+        "Release 10: 7 Jul 2027 / 28 Jul 2027 / 25 Aug 2027.\n"
+        "Release 11: 4 Aug 2027 / 25 Aug 2027 / 22 Sep 2027.\n"
+        "Release 12: 1 Sep 2027 / 22 Sep 2027 / 20 Oct 2027.\n"
+        "Typical pattern: pre-release on the first Wednesday, open about "
+        "three weeks later, close about four weeks after open at "
+        "12:00 p.m. ET. Not every component is in every release.",
     ),
     (
         "How to use this app in that process",

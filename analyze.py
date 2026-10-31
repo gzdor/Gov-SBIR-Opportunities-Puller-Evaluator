@@ -270,6 +270,9 @@ def catalog_blob(topic: dict) -> str:
         topic.get("keywords"),
         topic.get("cmmcLevel") or topic.get("cmmc"),
         topic.get("qaExcerpt"),
+        topic.get("overviewParagraph"),
+        " ".join(str(p) for p in (topic.get("technologyAreas") or []) if p),
+        topic.get("itar"),
     ]
     return " ".join(str(p) for p in parts if p)
 
@@ -309,9 +312,12 @@ def qa_answer_text(answer: dict | str | None) -> str:
     return strip_html(str(raw or ""))
 
 
-def format_qa_excerpt(items: list[dict] | None, limit: int = 3) -> str:
+def format_qa_excerpt(items: list[dict] | None, limit: int | None = 3) -> str:
     lines: list[str] = []
-    for item in (items or [])[:limit]:
+    pool = list(items or [])
+    if limit is not None:
+        pool = pool[:limit]
+    for item in pool:
         question = strip_html(str(item.get("question") or ""))
         answers = item.get("answers") or []
         answer = qa_answer_text(answers[0] if answers else "")
@@ -382,6 +388,16 @@ def format_day(iso: str | None) -> str:
     if not iso:
         return "—"
     return str(iso)[:10]
+
+
+def refresh_due_in(row: dict) -> dict:
+    """Recompute dueIn from the stored due date so a restored snapshot ages."""
+    due = row.get("due") or row.get("topicEndDate")
+    if due in (None, "", "—"):
+        row["dueIn"] = row.get("dueIn") or "—"
+        return row
+    row["dueIn"] = days_until(str(due))
+    return row
 
 
 def days_until(iso: str | None) -> str:
@@ -711,33 +727,117 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         "qaExcerpt": topic.get("qaExcerpt") or "",
         "cmmc": topic.get("cmmcLevel") or topic.get("cmmc") or "—",
         "tpoc": tpoc_label(topic),
+        "keywords": topic.get("keywords") or "",
+        "technologyAreas": list(topic.get("technologyAreas") or []),
+        "itar": topic.get("itar") or "",
+        "detailsFile": topic.get("detailsFile") or "",
+        "instructionPdfs": list(
+            topic.get("instructionPdfs")
+            or topic.get("solicitationDocuments")
+            or []
+        ),
+        "overviewParagraph": topic.get("overviewParagraph") or "",
     }
-    excerpt = load_qa_excerpt(output_dir, row.get("qaFile") or "")
+    details = load_json_under(output_dir, row.get("detailsFile") or "")
+    if isinstance(details, dict):
+        apply_details_fields(row, details)
+    excerpt = load_qa_excerpt(
+        output_dir, row.get("qaFile") or "", limit=None
+    )
     if excerpt:
         row["qaExcerpt"] = excerpt
+    pdf_for_overview = pdf_text
+    if not pdf_for_overview and output_dir and pdf_name:
+        path = resolve_pdf(output_dir, pdf_name)
+        if path is not None:
+            pdf_for_overview = extract_pdf_text(path)
+    row["overviewParagraph"] = topic_overview_paragraph(
+        row, pdf_text=pdf_for_overview, details=details if isinstance(details, dict) else None
+    )
+    refresh_due_in(row)
     return row
 
 
-def load_qa_excerpt(output_dir: Path | None, relative: str) -> str:
+def load_json_under(output_dir: Path | None, relative: str) -> object | None:
     if output_dir is None or not relative or not isinstance(relative, str):
-        return ""
+        return None
     if "\x00" in relative or ":" in Path(relative).name:
-        return ""
+        return None
     base = output_dir.resolve()
     candidate = (base / relative).resolve()
     try:
         candidate.relative_to(base)
     except ValueError:
-        return ""
+        return None
     if candidate.suffix.lower() != ".json" or not candidate.is_file():
-        return ""
+        return None
     try:
-        payload = json.loads(candidate.read_text(encoding="utf-8"))
+        return json.loads(candidate.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return ""
+        return None
+
+
+def load_qa_excerpt(
+    output_dir: Path | None, relative: str, limit: int | None = 3
+) -> str:
+    payload = load_json_under(output_dir, relative)
     if not isinstance(payload, list):
         return ""
-    return format_qa_excerpt(payload)
+    return format_qa_excerpt(payload, limit=limit)
+
+
+def itar_flag(value: object) -> bool:
+    if value in (True, 1, "1", "true", "True", "Y", "yes"):
+        return True
+    text = strip_html(str(value or "")).strip()
+    if not text or text.lower() in {"—", "-", "n", "false", "0", "none", "null", "no"}:
+        return False
+    return True
+
+
+def apply_details_fields(row: dict, details: dict) -> None:
+    if details.get("keywords"):
+        row["keywords"] = details.get("keywords") or ""
+    areas = details.get("technologyAreas") or details.get("focusAreas") or []
+    if isinstance(areas, list):
+        row["technologyAreas"] = [str(item) for item in areas if item]
+    if details.get("itar") not in (None, ""):
+        row["itar"] = details.get("itar")
+    if details.get("cmmcLevel"):
+        row["cmmc"] = details.get("cmmcLevel")
+
+
+def topic_overview_paragraph(
+    row: dict,
+    pdf_text: str = "",
+    details: dict | None = None,
+) -> str:
+    """One-paragraph local extractive overview. No cloud model, no network."""
+    title = str(row.get("title") or row.get("topicTitle") or "").strip()
+    objective = ""
+    description = ""
+    if isinstance(details, dict):
+        objective = strip_html(str(details.get("objective") or ""))
+        description = strip_html(str(details.get("description") or ""))
+    if pdf_text:
+        if not objective:
+            objective = _section_after(pdf_text, "OBJECTIVE", limit=1200)
+        if not description:
+            description = _section_after(pdf_text, "DESCRIPTION", limit=900)
+    pool = _sentences(objective) + _sentences(description)
+    if not pool:
+        fallback = (
+            objective
+            or description
+            or str(row.get("problem") or row.get("overview") or title)
+        )
+        para = re.sub(r"\s+", " ", fallback).strip()
+    else:
+        chosen = pool[:2]
+        para = " ".join(chosen)
+        if title and not para.lower().startswith(title[:24].lower()):
+            para = f"{title}: {para}"
+    return (para[:620].rstrip() or "—")
 
 
 def resolve_pdf(output_dir: Path, relative: str) -> Path | None:

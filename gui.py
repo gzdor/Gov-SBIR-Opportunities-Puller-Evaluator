@@ -29,6 +29,9 @@ import sbir_guide
 import theme
 
 APP_TITLE = "DSIP Opportunities — Puller & Evaluator"
+# Machine-local only: parent folder, last snapshot path, triage, chips, Find.
+# Never written into a download folder or committed. Do not copy this file
+# between machines expecting shared capture state.
 STATE_FILE = Path.home() / ".dsip_downloader_state.json"
 DEPARTMENT_CHIPS = (
     ("DAF", "DAF"),
@@ -54,6 +57,9 @@ WORKFLOW_CHIPS = (
     ("D2P2", "D2P2"),
     ("Open", "__open__"),
     ("Has Q&A", "__qa__"),
+    ("ITAR", "__itar__"),
+    ("New", "__new__"),
+    ("Changed", "__changed__"),
     ("due < 7d", "__due7__"),
     ("due < 14d", "__due14__"),
 )
@@ -128,9 +134,14 @@ class App:
         )
         self.call_filter_var = tk.StringVar(value="All calls")
         self.note_var = tk.StringVar(value="")
+        self.tech_area_var = tk.StringVar(value="All tech areas")
+        self.show_zero_components = tk.BooleanVar(value=False)
         self._bluf_rows: list[dict] = []
         self._topics_for_diff: list[dict] = []
         self._triage: dict[str, dict[str, str]] = {}
+        self._diff_added: set[str] = set()
+        self._diff_changed: set[str] = set()
+        self._dept_checks: dict[str, ttk.Checkbutton] = {}
         self._sort_column = ""
         self._sort_reverse = False
         self._zoom = 1.0
@@ -142,9 +153,11 @@ class App:
 
         self._build_widgets()
         self._bind_zoom()
+        self._bind_shortcuts()
         self.filter_var.trace_add("write", self._sync_button_label)
-        self.table_filter_var.trace_add("write", lambda *_: self._render_table())
-        self.call_filter_var.trace_add("write", lambda *_: self._render_table())
+        self.table_filter_var.trace_add("write", lambda *_: self._on_filter_change())
+        self.call_filter_var.trace_add("write", lambda *_: self._on_filter_change())
+        self.tech_area_var.trace_add("write", lambda *_: self._on_filter_change())
         self._restore_state()
 
     # ---- UI construction -------------------------------------------------
@@ -247,23 +260,35 @@ class App:
         ttk.Label(chips, text="Component:").grid(row=0, column=0, sticky="nw")
         dept = ttk.Frame(chips)
         dept.grid(row=0, column=1, columnspan=12, sticky="w")
+        self._dept_frame = dept
         for index, (label, key) in enumerate(DEPARTMENT_CHIPS):
-            ttk.Checkbutton(
+            button = ttk.Checkbutton(
                 dept,
                 text=label,
                 variable=self._chip_vars[key],
                 command=self._on_chips,
-            ).grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+            )
+            button.grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+            self._dept_checks[key] = button
+        ttk.Checkbutton(
+            chips,
+            text="Show empty components",
+            variable=self.show_zero_components,
+            command=self._refresh_chip_labels,
+        ).grid(row=0, column=13, sticky="e")
         ttk.Label(chips, text="Narrow:").grid(row=1, column=0, sticky="w", pady=(4, 0))
         work = ttk.Frame(chips)
         work.grid(row=1, column=1, columnspan=12, sticky="w", pady=(4, 0))
+        self._work_checks: dict[str, ttk.Checkbutton] = {}
         for index, (label, key) in enumerate(WORKFLOW_CHIPS):
-            ttk.Checkbutton(
+            button = ttk.Checkbutton(
                 work,
                 text=label,
                 variable=self._chip_vars[key],
                 command=self._on_chips,
-            ).grid(row=0, column=index, sticky="w", padx=4)
+            )
+            button.grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+            self._work_checks[key] = button
         ttk.Label(chips, text="Calls:").grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.call_filter = ttk.Combobox(
             chips,
@@ -273,11 +298,22 @@ class App:
             width=12,
         )
         self.call_filter.grid(row=2, column=1, sticky="w", padx=6, pady=(4, 0))
+        ttk.Label(chips, text="Tech area:").grid(
+            row=2, column=2, sticky="w", padx=(12, 0), pady=(4, 0)
+        )
+        self.tech_area_filter = ttk.Combobox(
+            chips,
+            textvariable=self.tech_area_var,
+            values=("All tech areas",),
+            state="readonly",
+            width=22,
+        )
+        self.tech_area_filter.grid(row=2, column=3, sticky="w", padx=6, pady=(4, 0))
         ttk.Label(
             chips,
             text="1 Pursue · 2 Watch · 3 Pass · 0 clear   (table focused)",
             style="Hint.TLabel",
-        ).grid(row=2, column=2, columnspan=8, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=4, columnspan=8, sticky="w", pady=(4, 0))
 
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
             row=7, column=0, columnspan=2, sticky="w", padx=10
@@ -300,18 +336,20 @@ class App:
             tool, text="Diff previous…", command=self.diff_previous
         )
         self.diff_btn.grid(row=0, column=3, padx=2)
+        tools_wrap = ttk.Frame(tool)
+        tools_wrap.grid(row=1, column=0, columnspan=4, sticky="ew", pady=(4, 0))
         self.open_folder_btn = ttk.Button(
-            tool, text="Open folder", command=self.open_output_folder
+            tools_wrap, text="Open folder", command=self.open_output_folder
         )
-        self.open_folder_btn.grid(row=0, column=4, padx=2)
+        self.open_folder_btn.grid(row=0, column=0, padx=(0, 2))
         self.open_snapshot_btn = ttk.Button(
-            tool, text="Open snapshot…", command=self.open_snapshot
+            tools_wrap, text="Open snapshot…", command=self.open_snapshot
         )
-        self.open_snapshot_btn.grid(row=0, column=5, padx=2)
+        self.open_snapshot_btn.grid(row=0, column=1, padx=2)
         self.settings_btn = ttk.Button(
-            tool, text="Hide settings", command=self.toggle_chrome
+            tools_wrap, text="Hide settings", command=self.toggle_chrome
         )
-        self.settings_btn.grid(row=0, column=6, padx=2)
+        self.settings_btn.grid(row=0, column=2, padx=2)
 
         pane = ttk.Panedwindow(frame, orient=tk.VERTICAL)
         pane.grid(row=9, column=0, columnspan=3, sticky="nsew", **pad)
@@ -420,18 +458,22 @@ class App:
             actions, text="Copy brief", command=self._copy_selected_brief
         )
         self.copy_brief_btn.grid(row=0, column=2, sticky="w", padx=6)
+        self.open_instruction_btn = ttk.Button(
+            actions, text="Open instruction PDF", command=self._open_selected_instruction
+        )
+        self.open_instruction_btn.grid(row=0, column=3, sticky="w", padx=6)
         self.pursue_btn = ttk.Button(
             actions, text="Pursue", command=lambda: self._set_selected_triage("pursue")
         )
-        self.pursue_btn.grid(row=0, column=3, sticky="w", padx=(16, 4))
+        self.pursue_btn.grid(row=0, column=4, sticky="w", padx=(16, 4))
         self.watch_btn = ttk.Button(
             actions, text="Watch", command=lambda: self._set_selected_triage("watch")
         )
-        self.watch_btn.grid(row=0, column=4, sticky="w", padx=4)
+        self.watch_btn.grid(row=0, column=5, sticky="w", padx=4)
         self.pass_btn = ttk.Button(
             actions, text="Pass", command=lambda: self._set_selected_triage("pass")
         )
-        self.pass_btn.grid(row=0, column=5, sticky="w", padx=4)
+        self.pass_btn.grid(row=0, column=6, sticky="w", padx=4)
         ttk.Label(detail, text="Note (stays on this machine):").grid(
             row=3, column=0, sticky="w", pady=(8, 0)
         )
@@ -510,6 +552,21 @@ class App:
             "<Control-KP_Subtract>",
         ):
             self.root.bind_all(seq, self._on_zoom_out)
+
+    def _bind_shortcuts(self) -> None:
+        self.root.bind_all("<Control-f>", self._focus_find)
+        self.root.bind_all("<Control-F>", self._focus_find)
+        self.root.bind_all("<Control-b>", self._on_copy_brief)
+        self.root.bind_all("<Control-B>", self._on_copy_brief)
+
+    def _focus_find(self, _event: tk.Event | None = None) -> str:
+        self.table_filter_entry.focus_set()
+        self.table_filter_entry.selection_range(0, "end")
+        return "break"
+
+    def _on_copy_brief(self, _event: tk.Event | None = None) -> str:
+        self._copy_selected_brief()
+        return "break"
 
     def _on_zoom_in(self, _event: tk.Event | None = None) -> str:
         self._set_zoom(self._zoom + theme.ZOOM_STEP)
@@ -654,6 +711,7 @@ class App:
             row["pdf"] = topic.get("pdf") or ""
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
             self._stamp_triage(row)
+        self._fill_tech_areas()
         self._render_table()
         self._refresh_caption(pending=True)
         self._save_state()
@@ -753,9 +811,81 @@ class App:
         ]
         return " ".join(parts)
 
+    def _on_filter_change(self) -> None:
+        self._render_table()
+        self._save_state()
+
     def _on_chips(self) -> None:
         self._sync_button_label()
         self._render_table()
+        self._save_state()
+
+    def _row_in_diff(self, row: dict, codes: set[str]) -> bool:
+        return str(row.get("code") or "") in codes
+
+    def _fill_tech_areas(self) -> None:
+        areas = sorted(
+            {
+                str(item)
+                for row in self._bluf_rows
+                for item in (row.get("technologyAreas") or [])
+                if item
+            }
+        )
+        values = ("All tech areas",) + tuple(areas)
+        if getattr(self, "tech_area_filter", None) is not None:
+            self.tech_area_filter.configure(values=values)
+        if self.tech_area_var.get() not in values:
+            self.tech_area_var.set("All tech areas")
+
+    def _refresh_chip_labels(self) -> None:
+        counts = {key: 0 for _, key in CHIP_SPECS}
+        for row in self._bluf_rows:
+            for _, key in DEPARTMENT_CHIPS:
+                groups = analyze.query_groups(key)
+                if self._row_matches_find(row, key, groups):
+                    counts[key] += 1
+            for _, key in WORKFLOW_CHIPS:
+                if key.startswith("__"):
+                    continue
+                groups = analyze.query_groups(key)
+                if self._row_matches_find(row, key, groups):
+                    counts[key] += 1
+            if analyze.is_open_status(row.get("status")):
+                counts["__open__"] += 1
+            if self._due_in_window(row, 7):
+                counts["__due7__"] += 1
+            if self._due_in_window(row, 14):
+                counts["__due14__"] += 1
+            if analyze.published_qa_count(row) > 0:
+                counts["__qa__"] += 1
+            if analyze.itar_flag(row.get("itar")):
+                counts["__itar__"] += 1
+            if self._row_in_diff(row, self._diff_added):
+                counts["__new__"] += 1
+            if self._row_in_diff(row, self._diff_changed):
+                counts["__changed__"] += 1
+        show_zero = bool(self.show_zero_components.get())
+        for label, key in DEPARTMENT_CHIPS:
+            button = self._dept_checks.get(key)
+            if button is None:
+                continue
+            n = counts[key]
+            button.configure(text=f"{label} ({n})")
+            if (
+                self._bluf_rows
+                and n == 0
+                and not show_zero
+                and not self._chip_vars[key].get()
+            ):
+                button.grid_remove()
+            else:
+                button.grid()
+        for label, key in WORKFLOW_CHIPS:
+            button = getattr(self, "_work_checks", {}).get(key)
+            if button is None:
+                continue
+            button.configure(text=f"{label} ({counts[key]})")
 
     def _clear_table(self) -> None:
         for item in self.table.get_children():
@@ -781,6 +911,20 @@ class App:
         if parent:
             self.folder_var.set(str(parent))
         self._triage = self._sanitize_triage(payload.get("triage"))
+        for key in payload.get("chips") or []:
+            if key in self._chip_vars:
+                self._chip_vars[key].set(True)
+        find = payload.get("find")
+        if isinstance(find, str):
+            self.table_filter_var.set(find)
+        call = payload.get("call_filter")
+        if call in CALL_FILTERS:
+            self.call_filter_var.set(call)
+        tech = payload.get("tech_area")
+        if isinstance(tech, str) and tech:
+            self.tech_area_var.set(tech)
+        if payload.get("show_zero_components") is True:
+            self.show_zero_components.set(True)
         last = payload.get("last_output")
         if last and (Path(last) / "manifest.json").is_file():
             self.output_dir = Path(last)
@@ -793,6 +937,11 @@ class App:
             "parent": self.folder_var.get().strip(),
             "last_output": str(self.output_dir) if self.output_dir else "",
             "triage": self._triage,
+            "chips": [key for key, var in self._chip_vars.items() if var.get()],
+            "find": self.table_filter_var.get(),
+            "call_filter": self.call_filter_var.get(),
+            "tech_area": self.tech_area_var.get(),
+            "show_zero_components": bool(self.show_zero_components.get()),
         }
         try:
             STATE_FILE.write_text(
@@ -868,7 +1017,9 @@ class App:
         self._bluf_rows = rows
         self._topics_for_diff = payload.get("topics") or []
         for row in self._bluf_rows:
+            analyze.refresh_due_in(row)
             self._stamp_triage(row)
+        self._fill_tech_areas()
         self._render_table()
         if selected_key:
             rebound = next(
@@ -900,7 +1051,18 @@ class App:
         self, row: dict, needle: str, groups: list[list[str]]
     ) -> bool:
         blob = " ".join(str(row.get(col) or "") for col in self._columns)
-        blob = f"{blob} {row.get('note') or ''} {row.get('qaExcerpt') or ''}".lower()
+        extra = " ".join(
+            str(row.get(key) or "")
+            for key in (
+                "note",
+                "qaExcerpt",
+                "keywords",
+                "overviewParagraph",
+                "itar",
+            )
+        )
+        areas = " ".join(str(item) for item in (row.get("technologyAreas") or []) if item)
+        blob = f"{blob} {extra} {areas}".lower()
         if needle.lower() in blob:
             return True
         fake = {
@@ -935,6 +1097,19 @@ class App:
             rows = [row for row in rows if self._due_in_window(row, 14)]
         if self._chip_vars["__qa__"].get():
             rows = [row for row in rows if analyze.published_qa_count(row) > 0]
+        if self._chip_vars["__itar__"].get():
+            rows = [row for row in rows if analyze.itar_flag(row.get("itar"))]
+        if self._chip_vars["__new__"].get():
+            rows = [row for row in rows if self._row_in_diff(row, self._diff_added)]
+        if self._chip_vars["__changed__"].get():
+            rows = [row for row in rows if self._row_in_diff(row, self._diff_changed)]
+        wanted_area = self.tech_area_var.get()
+        if wanted_area and wanted_area != "All tech areas":
+            rows = [
+                row
+                for row in rows
+                if wanted_area in [str(item) for item in (row.get("technologyAreas") or [])]
+            ]
         wanted = self.call_filter_var.get()
         if wanted == "Pursue":
             rows = [
@@ -1002,6 +1177,12 @@ class App:
         return str(row.get(column) or "—")
 
     def _render_table(self) -> None:
+        selected = list(self.table.selection())
+        focused = self.table.focus()
+        try:
+            y0 = self.table.yview()[0]
+        except tk.TclError:
+            y0 = 0.0
         self._clear_table()
         for index, row in enumerate(self._visible_rows()):
             tags = [analyze.urgency(row)]
@@ -1015,6 +1196,19 @@ class App:
                 values=tuple(self._cell(row, col) for col in self._columns),
                 tags=tuple(tags),
             )
+        keep = focused if focused and self.table.exists(focused) else ""
+        if keep:
+            self.table.selection_set(keep)
+            self.table.focus(keep)
+        else:
+            remain = [iid for iid in selected if self.table.exists(iid)]
+            if remain:
+                self.table.selection_set(remain)
+        try:
+            self.table.yview_moveto(y0)
+        except tk.TclError:
+            pass
+        self._refresh_chip_labels()
         if self._bluf_rows:
             self._refresh_caption()
 
@@ -1070,6 +1264,10 @@ class App:
             self._append_log("  new: " + ", ".join(diff["added"][:12]))
         if diff["removed"]:
             self._append_log("  gone: " + ", ".join(diff["removed"][:12]))
+        self._diff_added = set(diff["added"])
+        self._diff_changed = set(diff["changed"])
+        self._refresh_chip_labels()
+        self._render_table()
         if self._chrome_collapsed:
             self.log_frame.grid()
 
@@ -1089,6 +1287,11 @@ class App:
         title = f"{row.get('code') or '—'}  ·  {row.get('title') or '—'}"
         self.detail_title_var.set(title)
         call = analyze.triage_label(row.get("call")) or "—"
+        areas = ", ".join(str(item) for item in (row.get("technologyAreas") or []) if item) or "—"
+        itar = "yes" if analyze.itar_flag(row.get("itar")) else (row.get("itar") or "—")
+        overview = str(row.get("overviewParagraph") or "").strip()
+        if not overview:
+            overview = analyze.topic_overview_paragraph(row)
         body = "\n".join(
             [
                 f"Client: {row.get('client') or '—'}",
@@ -1096,9 +1299,15 @@ class App:
                 f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
                 f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
                 f"Call: {call}",
-                f"CMMC: {row.get('cmmc') or '—'}    Q&A: {row.get('qaPublished') or 0} published ({row.get('qaStatus') or '—'})",
+                f"CMMC: {row.get('cmmc') or '—'}    ITAR: {itar}",
+                f"Q&A: {row.get('qaPublished') or 0} published ({row.get('qaStatus') or '—'})",
                 f"TPOC: {row.get('tpoc') or '—'}",
+                f"Keywords: {row.get('keywords') or '—'}",
+                f"Tech areas: {areas}",
                 f"PDF: {row.get('pdf') or '—'}",
+                "",
+                "Overview (local extract from the topic PDF / details)",
+                overview or "—",
                 "",
                 str(row.get("problem") or row.get("overview") or "—"),
             ]
@@ -1148,6 +1357,25 @@ class App:
                 "Could not open that PDF. The path must be a real .pdf file "
                 "inside this download folder."
             )
+
+    def _open_selected_instruction(self) -> None:
+        row = self._selected_row
+        if not row or not self.output_dir:
+            return
+        names = [str(item) for item in (row.get("instructionPdfs") or []) if item]
+        if not names:
+            self._warn("That topic has no local instruction PDF.")
+            return
+        name = names[0]
+        if analyze.open_local_pdf(self.output_dir, name):
+            return
+        nested = str(Path("solicitation_documents") / Path(name).name)
+        if analyze.open_local_pdf(self.output_dir, nested):
+            return
+        self._warn(
+            "Could not open that instruction PDF. The path must be a real "
+            ".pdf file inside this download folder."
+        )
 
     def _copy_selected_code(self) -> None:
         row = self._selected_row

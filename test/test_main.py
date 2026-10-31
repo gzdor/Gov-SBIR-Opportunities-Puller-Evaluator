@@ -426,3 +426,39 @@ def test_save_published_questions_writes_json(tmp_path, monkeypatch):
     assert topics[0]["qaFile"] == "qa/ARM26BX00.json"
     assert "Threshold?" in topics[0]["qaExcerpt"]
     assert topics[1].get("qaFile") in (None, "")
+
+
+def test_fetch_topic_details_rejects_invalid_id(monkeypatch):
+    called = {"n": 0}
+
+    def boom(url, timeout):
+        called["n"] += 1
+        raise AssertionError(f"open_url must not run for invalid ids: {url}")
+
+    monkeypatch.setattr(main, "open_url", boom)
+    for bad in ("../secret", "topic id", "", "%2e%2e", "a/b"):
+        try:
+            main.fetch_topic_details(bad)
+        except RuntimeError as exc:
+            assert "invalid topic id" in str(exc).lower()
+        else:
+            raise AssertionError(f"expected invalid topic id to fail for {bad!r}")
+    assert called["n"] == 0
+
+
+def test_save_topic_details_writes_json(tmp_path, monkeypatch):
+    payload = {
+        "keywords": "uas, autonomy",
+        "technologyAreas": ["Autonomy"],
+        "itar": "N",
+        "objective": "Build a radio.",
+    }
+    monkeypatch.setattr(main, "fetch_topic_details", lambda _tid: payload)
+    topics = [topic(0), topic(1)]
+    saved = main.save_topic_details(topics, tmp_path)
+    assert saved == 2
+    dest = tmp_path / "details" / "ARM26BX00.json"
+    assert dest.is_file()
+    assert topics[0]["detailsFile"] == "details/ARM26BX00.json"
+    assert topics[0]["keywords"] == "uas, autonomy"
+    assert topics[0]["technologyAreas"] == ["Autonomy"]

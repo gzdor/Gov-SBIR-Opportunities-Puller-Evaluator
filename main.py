@@ -38,6 +38,9 @@ TOPIC_PDF_URL = (
 QUESTIONS_URL = (
     "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/questions"
 )
+DETAILS_URL = (
+    "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/details"
+)
 UPLOAD_PDF_URL = (
     "https://www.dodsbirsttr.mil/submissions/api/public/download?uploadId={upload_id}"
 )
@@ -341,6 +344,13 @@ def manifest_topic(
         "qaFile": topic.get("qaFile") or "",
         "cmmcLevel": topic.get("cmmcLevel") or topic.get("cmmc") or "",
         "tpoc": analyze.tpoc_label(topic),
+        "detailsFile": topic.get("detailsFile") or "",
+        "keywords": topic.get("keywords") or "",
+        "technologyAreas": list(topic.get("technologyAreas") or []),
+        "itar": topic.get("itar") or "",
+        "instructionPdfs": list(
+            topic.get("instructionPdfs") or attached or []
+        ),
     }
 
 
@@ -411,6 +421,45 @@ def save_published_questions(
             saved += 1
         except Exception as exc:  # noqa: BLE001 - Q&A is best-effort
             reporter.status(f"Q&A failed for {code}: {exc}")
+    return saved
+
+
+def fetch_topic_details(topic_id: str) -> dict:
+    if not TOPIC_ID_PATTERN.fullmatch(topic_id or ""):
+        raise RuntimeError("Refusing to fetch details for an invalid topic id.")
+    return fetch_json(DETAILS_URL.format(topic_id=topic_id))
+
+
+def save_topic_details(
+    topics: list[dict], output_dir: Path, reporter: "ConsoleReporter | None" = None
+) -> int:
+    """Write `details/*.json` (keywords, tech areas, ITAR, objective)."""
+    reporter = reporter or ConsoleReporter()
+    if not topics:
+        reporter.status("Topic details to fetch: 0.")
+        return 0
+    dest_dir = output_dir / "details"
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    reporter.status(f"Topic details to fetch: {len(topics)}.")
+    saved = 0
+    for topic in topics:
+        topic_id = str(topic.get("topicId") or "")
+        code = safe_filename(str(topic.get("topicCode") or topic_id), max_len=80)
+        dest = dest_dir / f"{code}.json"
+        try:
+            payload = fetch_topic_details(topic_id)
+            dest.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+            topic["detailsFile"] = relpath(dest, output_dir)
+            if payload.get("keywords"):
+                topic["keywords"] = payload.get("keywords")
+            areas = payload.get("technologyAreas") or payload.get("focusAreas") or []
+            if isinstance(areas, list):
+                topic["technologyAreas"] = [str(item) for item in areas if item]
+            if payload.get("itar") not in (None, ""):
+                topic["itar"] = payload.get("itar")
+            saved += 1
+        except Exception as exc:  # noqa: BLE001 - details are best-effort
+            reporter.status(f"Details failed for {code}: {exc}")
     return saved
 
 
@@ -797,6 +846,7 @@ def run(
     reporter.status(f"Topic PDFs to fetch: {len(topics)}.")
     topic_results.update(download_tasks(topic_tasks, workers, "topic PDF", reporter))
     save_published_questions(topics, output_dir, reporter)
+    save_topic_details(topics, output_dir, reporter)
     download_seconds = time.monotonic() - download_start
 
     topic_rows = []

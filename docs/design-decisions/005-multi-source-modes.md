@@ -9,8 +9,11 @@ implementing them.
 
 ## BLUF
 
-**Do not search GovWin. Do not scrape state or county grant portals.** There is
-no national public SLED API. GovWin is a paid OAuth CRM whose terms forbid
+**Do not search GovWin. Do not scrape state or county grant portals. Do not
+scrape [navysbir.com](https://www.navysbir.com/solicitations.htm).** The FY27
+calendar in the How-SBIR-works tab is a dated snapshot plus a citation link;
+live dates still come from DSIP. There is no national public SLED API.
+GovWin is a paid OAuth CRM whose terms forbid
 copying or redistributing the database. Both paths turn this repo into a worse
 HigherGov and collide with no-third-party-OAuth, PolyForm Noncommercial, and
 the GitHub account flag for shady distribution.

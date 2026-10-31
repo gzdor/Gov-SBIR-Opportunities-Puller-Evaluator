@@ -12,6 +12,9 @@ def test_guide_covers_process_without_copying_consultant_marketing():
     assert "Get my free funding report" not in text
     assert "kevin@" not in text
     assert "WhatsApp" not in text
+    assert "never scrapes navysbir.com" in text
+    assert "FY 2027" in text
+    assert "Release 2" in text
 
 
 def test_guide_lists_official_links_before_third_party():
@@ -19,4 +22,6 @@ def test_guide_lists_official_links_before_third_party():
     assert urls[0].startswith("https://www.dodsbirsttr.mil/")
     assert any("sbir.gov" in url for url in urls)
     assert urls[-1] == "https://investech-consulting.com/programs/afwerx-sbir/"
+    assert "https://www.navysbir.com/solicitations.htm" in urls
+    assert urls.index("https://www.navysbir.com/solicitations.htm") < len(urls) - 1
     assert all(url.startswith("https://") for url in urls)

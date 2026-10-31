@@ -57,6 +57,13 @@ Objections that changed the design are marked **fixed**.
 | A53 | Invalid Q&A `topicId` test could hit live DSIP | **Fixed** | Stub `open_url`; assert zero calls |
 | A54 | Q&A excerpt reader lacked a traversal test | **Fixed** | `load_qa_excerpt("../secret.json")` is empty |
 | A55 | Non-https guide link test asserted nothing | **Fixed** | Mock `webbrowser.open` |
+| A56 | Cloud LLM “AI overview” of the topic PDF | **Rejected** | Extractive `topic_overview_paragraph` only |
+| A57 | Scrape navysbir.com for the FY27 calendar | **Rejected** | Dated snapshot + citation link |
+| A58 | `/details` fetch with an invalid `topicId` | **Fixed** | Same `TOPIC_ID_PATTERN` stub as Q&A |
+| A59 | `load_json_under` path traversal | **Fixed** | Same sandbox as `load_qa_excerpt` |
+| A60 | Persist chips/Find into `manifest.json` | **Rejected** | Still machine-local `STATE_FILE` |
+| A61 | New / Changed chips without a prior diff | **Accepted** | Empty until **Diff previous…** runs |
+| A62 | Hide-zero chips hide the whole Component row on first launch | **Fixed** | Hide only after a snapshot has rows |
 
 ## Architecture of the review loop
 
