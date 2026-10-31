@@ -436,19 +436,41 @@ def extract_pdf_text(path: Path) -> str:
         return ""
 
 
+_SECTION_STOP = re.compile(
+    r"(?:\n\s*)?(?:ITAR|DESCRIPTION|PHASE\s*I|PHASE\s*II|DUAL USE|"
+    r"REFERENCES|KEYWORDS|BACKGROUND)\b",
+    re.IGNORECASE,
+)
+_PDF_HEADING_BREAK = re.compile(
+    r"(?<!\n)(?=(?:OBJECTIVE|DESCRIPTION|PHASE\s*I|PHASE\s*II|"
+    r"DUAL USE|REFERENCES|KEYWORDS)\s*:)",
+    re.IGNORECASE,
+)
+_LABEL_PREFIX = re.compile(
+    r"^(?:Background and Problem Statement|Opportunity and Desired Outcome|"
+    r"Required Efforts(?: and Phase Activities)?|The objective of this topic|"
+    r"OBJECTIVE|DESCRIPTION)\s*:?\s*",
+    re.IGNORECASE,
+)
+
+
+def normalize_pdf_text(text: str) -> str:
+    """Insert heading breaks pypdf often glues onto one line."""
+    raw = str(text or "")
+    raw = _PDF_HEADING_BREAK.sub("\n", raw)
+    return raw
+
+
 def _section_after(text: str, heading: str, limit: int = 900) -> str:
-    upper = text.upper()
+    blob = normalize_pdf_text(text)
+    upper = blob.upper()
     key = heading.upper()
     idx = upper.find(key)
     if idx < 0:
         return ""
-    rest = text[idx + len(heading) :].lstrip(":\n\r\t ")
+    rest = blob[idx + len(heading) :].lstrip(":\n\r\t ")
     rest = _ITAR_NOISE.sub(" ", rest)
-    cut = re.split(
-        r"\n\s*(?:ITAR|DESCRIPTION|PHASE I|PHASE II|DUAL USE|REFERENCES|KEYWORDS)\b",
-        rest,
-        maxsplit=1,
-    )
+    cut = _SECTION_STOP.split(rest, maxsplit=1)
     body = cut[0] if cut else rest
     body = re.sub(r"\s+", " ", body).strip()
     return body[:limit].rstrip()
@@ -738,7 +760,7 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         ),
         "overviewParagraph": topic.get("overviewParagraph") or "",
     }
-    details = load_json_under(output_dir, row.get("detailsFile") or "")
+    details = load_topic_details(output_dir, row)
     if isinstance(details, dict):
         apply_details_fields(row, details)
     excerpt = load_qa_excerpt(
@@ -796,15 +818,79 @@ def itar_flag(value: object) -> bool:
 
 
 def apply_details_fields(row: dict, details: dict) -> None:
-    if details.get("keywords"):
-        row["keywords"] = details.get("keywords") or ""
-    areas = details.get("technologyAreas") or details.get("focusAreas") or []
+    payload = unwrap_details(details)
+    if payload.get("keywords"):
+        row["keywords"] = payload.get("keywords") or ""
+    areas = payload.get("technologyAreas") or payload.get("focusAreas") or []
     if isinstance(areas, list):
         row["technologyAreas"] = [str(item) for item in areas if item]
-    if details.get("itar") not in (None, ""):
-        row["itar"] = details.get("itar")
-    if details.get("cmmcLevel"):
-        row["cmmc"] = details.get("cmmcLevel")
+    if payload.get("itar") not in (None, ""):
+        row["itar"] = payload.get("itar")
+    if payload.get("cmmcLevel"):
+        row["cmmc"] = payload.get("cmmcLevel")
+
+
+def unwrap_details(details: object) -> dict:
+    if not isinstance(details, dict):
+        return {}
+    inner = details.get("data")
+    if isinstance(inner, dict) and (
+        inner.get("objective") or inner.get("description") or inner.get("keywords")
+    ):
+        return inner
+    return details
+
+
+def _details_field(details: dict, *names: str) -> str:
+    for name in names:
+        raw = details.get(name)
+        if isinstance(raw, dict):
+            raw = raw.get("content") or raw.get("text") or ""
+        text = strip_html(str(raw or ""))
+        if text.strip():
+            return text
+    return ""
+
+
+def clean_topic_prose(text: str) -> str:
+    blob = strip_html(str(text or ""))
+    blob = _ITAR_NOISE.sub(" ", blob)
+    blob = re.sub(r"\s+", " ", blob).strip()
+    blob = _LABEL_PREFIX.sub("", blob).strip()
+    return blob
+
+
+def _trim_paragraph(text: str, limit: int = 720) -> str:
+    blob = re.sub(r"\s+", " ", text or "").strip()
+    if len(blob) <= limit:
+        return blob
+    cut = blob[:limit]
+    for sep in (". ", "? ", "! "):
+        idx = cut.rfind(sep)
+        if idx >= 160:
+            return cut[: idx + 1].strip()
+    idx = cut.rfind(" ")
+    return (cut[:idx] if idx > 80 else cut).rstrip(" ,;:") + "…"
+
+
+def _is_title_only(text: str, title: str) -> bool:
+    left = re.sub(r"\s+", " ", text or "").strip().rstrip(".:").lower()
+    right = re.sub(r"\s+", " ", title or "").strip().rstrip(".:").lower()
+    return bool(left) and left == right
+
+
+def load_topic_details(output_dir: Path | None, row: dict) -> dict | None:
+    """Load details JSON from the stamped path or details/{code}.json."""
+    candidates = [str(row.get("detailsFile") or "")]
+    code = str(row.get("code") or row.get("topicCode") or "").strip()
+    if code and code != "—":
+        slug = re.sub(r'[<>:"/\\|?*]', "_", code)[:80]
+        candidates.append(f"details/{slug}.json")
+    for rel in candidates:
+        payload = load_json_under(output_dir, rel)
+        if isinstance(payload, dict):
+            return unwrap_details(payload)
+    return None
 
 
 def topic_overview_paragraph(
@@ -812,32 +898,61 @@ def topic_overview_paragraph(
     pdf_text: str = "",
     details: dict | None = None,
 ) -> str:
-    """One-paragraph local extractive overview. No cloud model, no network."""
+    """One-paragraph local extractive overview. No cloud model, no network.
+
+    Prefers `/details` objective + description (ITAR boilerplate stripped),
+    then the PDF OBJECTIVE / DESCRIPTION sections. Truncates on a sentence
+    boundary instead of mid-word.
+    """
     title = str(row.get("title") or row.get("topicTitle") or "").strip()
-    objective = ""
-    description = ""
-    if isinstance(details, dict):
-        objective = strip_html(str(details.get("objective") or ""))
-        description = strip_html(str(details.get("description") or ""))
-    if pdf_text:
-        if not objective:
-            objective = _section_after(pdf_text, "OBJECTIVE", limit=1200)
-        if not description:
-            description = _section_after(pdf_text, "DESCRIPTION", limit=900)
-    pool = _sentences(objective) + _sentences(description)
-    if not pool:
-        fallback = (
-            objective
-            or description
-            or str(row.get("problem") or row.get("overview") or title)
+    payload = unwrap_details(details) if details else {}
+    objective = clean_topic_prose(
+        _details_field(payload, "objective", "topicObjective", "topic_objective")
+    )
+    description = clean_topic_prose(
+        _details_field(
+            payload,
+            "description",
+            "topicDescription",
+            "topic_description",
+            "phase2Description",
         )
-        para = re.sub(r"\s+", " ", fallback).strip()
-    else:
-        chosen = pool[:2]
+    )
+    pdf_blob = normalize_pdf_text(pdf_text)
+    if pdf_blob:
+        if not objective:
+            objective = clean_topic_prose(_section_after(pdf_blob, "OBJECTIVE", limit=1600))
+        if not description:
+            description = clean_topic_prose(
+                _section_after(pdf_blob, "DESCRIPTION", limit=1400)
+            )
+    pool = _sentences(objective) + _sentences(description)
+    chosen: list[str] = []
+    seen: set[str] = set()
+    for sentence in pool:
+        if _is_title_only(sentence, title):
+            continue
+        key = sentence[:80].lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(sentence)
+        if len(chosen) == 3:
+            break
+    if chosen:
         para = " ".join(chosen)
-        if title and not para.lower().startswith(title[:24].lower()):
-            para = f"{title}: {para}"
-    return (para[:620].rstrip() or "—")
+    else:
+        fallback = objective or description or ""
+        if _is_title_only(fallback, title):
+            fallback = ""
+        para = fallback
+    para = _trim_paragraph(para, 720)
+    if not para or _is_title_only(para, title):
+        stored = str(row.get("overviewParagraph") or "").strip()
+        if stored and stored != "—" and not _is_title_only(stored, title):
+            return _trim_paragraph(stored, 720)
+        return "—"
+    return para
 
 
 def resolve_pdf(output_dir: Path, relative: str) -> Path | None:

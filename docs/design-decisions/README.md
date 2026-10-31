@@ -16,8 +16,10 @@ review** that had to fail before the code landed.
 | [007](007-topic-qa-and-component-chips.md) | Published Topic Q&A in the snapshot; DSIP component chips |
 | [008](008-how-sbir-works-tab.md) | Offline How-SBIR-works tab; no consultant reprint or scrape |
 | [009](009-hygiene-and-donext.md) | Hygiene + Do Next sprint: details, overview, persist, calendar |
+| [010](010-optional-local-llms.md) | Future opt-in local Ollama/llama.cpp for snapshot text; no cloud/HF |
 
 Do **not** use these notes as permission to: publish an unsigned `.exe`, send
-filter text to DSIP `searchText`, call a cloud LLM, add third-party OAuth,
+filter text to DSIP `searchText`, call a cloud LLM or pull HuggingFace
+weights, add third-party OAuth,
 search GovWin, scrape navysbir.com, or scrape state/county portals. [005](005-multi-source-modes.md)
 is research, not a green light to land those clients.

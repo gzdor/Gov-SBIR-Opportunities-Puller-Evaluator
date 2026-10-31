@@ -22,9 +22,10 @@ unsigned `.exe`, no CRM, no login/ask-Q&A.
    in `sbir_guide.py`. Confirm live dates on DSIP. Never fetch or parse that
    site.
 2. **Topic overview is extractive and local.** `topic_overview_paragraph`
-   stitches the title plus the first objective/description sentences from the
-   on-disk topic PDF and/or `/details` JSON. No HuggingFace, no OpenAI, no
-   network at click time.
+   takes the first real objective/description sentences from on-disk
+   `/details` JSON and/or the topic PDF, after stripping ITAR boilerplate.
+   No HuggingFace, no OpenAI, no network at click time. A later optional
+   local model is recorded in [010](010-optional-local-llms.md), not landed.
 3. **Fetch public `/topics/{id}/details`** after Q&A. Stamp keywords,
    technology areas, and ITAR onto the manifest. Invalid ids refuse before
    `open_url` (same rule as Q&A).

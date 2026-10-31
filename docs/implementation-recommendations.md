@@ -46,7 +46,9 @@ Topic overview
 
 - Scrape navysbir.com, GovWin, BidNet, or county portals.
 - Send Find / chips / download filter as DSIP `searchText`.
-- Call OpenAI / HuggingFace / any hosted model for the overview.
+- Call OpenAI / HuggingFace / any hosted model for the overview. A later
+  **opt-in local** Ollama or llama.cpp client is recorded in
+  [ADR 010](design-decisions/010-optional-local-llms.md); it is not landed.
 - Publish an unsigned `.exe` on GitHub Releases.
 - Add DSIP login, “ask a question,” or a CRM pipeline.
 
@@ -54,6 +56,9 @@ Topic overview
 
 - Official opt-in clients from [ADR 005](design-decisions/005-multi-source-modes.md)
   (sbir.gov API, Grants.gov, SAM.gov with the user’s own key).
+- Optional **localhost** Ollama or llama.cpp rewrite/query of the current
+  snapshot, off by default, extractive fallback — [ADR 010](design-decisions/010-optional-local-llms.md).
+  Do not bundle a GGUF in the exe.
 - Code-signed public Windows download.
 - Replace `docs/images/app-window.jpg` after the next real capture (counts,
   overview, instruction button).

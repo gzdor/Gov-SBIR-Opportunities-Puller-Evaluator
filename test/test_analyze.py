@@ -257,8 +257,9 @@ def test_topic_overview_paragraph_is_local_extractive():
     }
     row = {"title": "Reusable Illumination System", "code": "DAF01"}
     para = analyze.topic_overview_paragraph(row, details=details)
-    assert "Reusable Illumination System" in para
     assert "illumination" in para.lower()
+    assert "flash bulbs" in para.lower()
+    assert not para.endswith("Exchange")
     assert analyze.itar_flag("N") is False
     assert analyze.itar_flag("Y") is True
     assert analyze.itar_flag("") is False
@@ -266,6 +267,67 @@ def test_topic_overview_paragraph_is_local_extractive():
     analyze.refresh_due_in(row)
     assert row["dueIn"] != "99d"
     assert row["dueIn"] in {"closed", "today"} or row["dueIn"].endswith("d")
+
+
+def test_topic_overview_strips_itar_and_does_not_echo_title():
+    details = {
+        "objective": (
+            "<p>The technology within this topic is restricted under the International "
+            "Traffic in Arms Regulation (ITAR), 22 CFR Parts 120-130, which controls "
+            "the export and import of defense-related material and services, including "
+            "export of sensitive technical data, or the Export Administration Regulation "
+            "(EAR), 15 CFR Parts 730-774, which controls dual use items. Offerors must "
+            "disclose any proposed use of foreign nationals (FNs), their country(ies) of "
+            "origin, the type of visa or work permit possessed, and the statement of work "
+            "(SOW) tasks intended for accomplishment by the FN(s) in accordance with "
+            "section 3.5 of the Announcement. Offerors are advised foreign nationals "
+            "proposed to perform on this topic may be restricted due to the technical "
+            "data under US Export Control Laws.</p>"
+            "<p>The objective of this Directed to Phase II (D2P2) SBIR effort is to "
+            "develop an innovative, secure, and scalable solution for modernizing "
+            "Technical Data Packages (TDPs) associated with complex Air and Space Force "
+            "platforms. This initiative seeks to address challenges in managing large, "
+            "diverse datasets by enhancing configuration control, ensuring data integrity, "
+            "and strengthening Information Assurance (IA) in support of mission-critical "
+            "operations.</p>"
+        ),
+        "description": (
+            "<p>Background and Problem Statement:</p>"
+            "<p>The modernization of Technical Data Packages (TDPs) is imperative to "
+            "address the Air and Space Force’s operational challenges in securely "
+            "managing large-scale, complex datasets associated with advanced platforms "
+            "and their sustainment life cycles.</p>"
+        ),
+        "keywords": "Technical Data Packages (TDP); Information Assurance (IA)",
+        "technologyAreas": ["Air Platform"],
+        "itar": True,
+    }
+    row = {
+        "title": "Technical Data Package Modernization for Information Assurance and Secure Data Exchange",
+        "code": "DAF27BZ01-DV008",
+    }
+    para = analyze.topic_overview_paragraph(row, details=details)
+    assert "Technical Data Packages" in para or "modernizing" in para.lower()
+    assert para != row["title"]
+    assert "22 CFR" not in para
+    assert not para.endswith("Exchange")
+    analyze.apply_details_fields(row, details)
+    assert row["keywords"].startswith("Technical Data Packages")
+    assert row["technologyAreas"] == ["Air Platform"]
+    assert analyze.itar_flag(row["itar"]) is True
+    glued = (
+        "TITLE: Technical Data Package Modernization "
+        "OBJECTIVE:Develop a secure TDP exchange that keeps the as-sustained "
+        "configuration intact across Air Force networks. "
+        "DESCRIPTION:Current TDP systems lack Information Assurance. "
+        "PHASE I: As this is Direct to Phase II, no Phase I awards."
+    )
+    from_pdf = analyze.topic_overview_paragraph(
+        {"title": row["title"]}, pdf_text=glued
+    )
+    assert "secure TDP" in from_pdf or "Information Assurance" in from_pdf
+    assert from_pdf != row["title"]
+    assert analyze.topic_overview_paragraph(row) == "—"
 
 
 def test_write_bluf_csv_includes_call_and_note(tmp_path):

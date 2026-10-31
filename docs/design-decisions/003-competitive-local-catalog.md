@@ -42,6 +42,8 @@ structurally bad at for DSIP:
 
 Out of scope on purpose: SAM-wide coverage, email alerts, capture CRM, teaming
 databases, HuggingFace/OpenAI, third-party OAuth, public unsigned `.exe`.
+A later **optional local** GGUF/Ollama query path is documented in
+[010](010-optional-local-llms.md) and is not in the default product.
 
 ## Why
 

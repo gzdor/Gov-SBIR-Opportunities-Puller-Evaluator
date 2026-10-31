@@ -1288,10 +1288,32 @@ class App:
         self.detail_title_var.set(title)
         call = analyze.triage_label(row.get("call")) or "—"
         areas = ", ".join(str(item) for item in (row.get("technologyAreas") or []) if item) or "—"
-        itar = "yes" if analyze.itar_flag(row.get("itar")) else (row.get("itar") or "—")
-        overview = str(row.get("overviewParagraph") or "").strip()
-        if not overview:
-            overview = analyze.topic_overview_paragraph(row)
+        itar = "yes" if analyze.itar_flag(row.get("itar")) else (str(row.get("itar") or "—") if row.get("itar") not in (None, "", False) else "—")
+        if itar in {"True", "true"}:
+            itar = "yes"
+        details = analyze.load_topic_details(self.output_dir, row)
+        if isinstance(details, dict):
+            analyze.apply_details_fields(row, details)
+            areas = ", ".join(str(item) for item in (row.get("technologyAreas") or []) if item) or areas
+            if analyze.itar_flag(row.get("itar")):
+                itar = "yes"
+        pdf_text = ""
+        pdf_name = str(row.get("pdf") or "")
+        if self.output_dir and pdf_name and pdf_name not in {"Failed", "—"}:
+            path = analyze.resolve_pdf(self.output_dir, pdf_name)
+            if path is not None:
+                pdf_text = analyze.extract_pdf_text(path)
+        overview = analyze.topic_overview_paragraph(row, pdf_text=pdf_text, details=details)
+        row["overviewParagraph"] = overview
+        problem = str(row.get("problem") or row.get("overview") or "").strip()
+        extra_problem = ""
+        if (
+            problem
+            and problem not in {"—", overview}
+            and not analyze._is_title_only(problem, str(row.get("title") or ""))
+            and problem not in overview
+        ):
+            extra_problem = problem
         body = "\n".join(
             [
                 f"Client: {row.get('client') or '—'}",
@@ -1306,12 +1328,12 @@ class App:
                 f"Tech areas: {areas}",
                 f"PDF: {row.get('pdf') or '—'}",
                 "",
-                "Overview (local extract from the topic PDF / details)",
+                "Overview (from the topic details / PDF — local extract, not a cloud model)",
                 overview or "—",
-                "",
-                str(row.get("problem") or row.get("overview") or "—"),
             ]
         )
+        if extra_problem:
+            body = f"{body}\n\n{extra_problem}"
         excerpt = str(row.get("qaExcerpt") or "").strip()
         if excerpt:
             body = f"{body}\n\nPublished Q&A\n{excerpt}"

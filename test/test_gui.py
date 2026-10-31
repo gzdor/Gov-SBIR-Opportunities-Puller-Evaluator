@@ -753,7 +753,8 @@ def test_gui_persists_chips_find_and_shows_overview():
         app._show_detail(app._bluf_rows[0])
         body = app.detail_text.get("1.0", "end")
         assert "Reusable light source" in body
-        assert "Overview (local extract" in body
+        assert "Overview (from the topic details" in body
+        assert body.count("Reusable light source") == 1
         saved = json.loads(gui.STATE_FILE.read_text(encoding="utf-8"))
         assert "__itar__" in saved["chips"]
         assert saved["find"] == "Illumination"

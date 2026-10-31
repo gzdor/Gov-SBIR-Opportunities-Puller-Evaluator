@@ -64,6 +64,12 @@ Objections that changed the design are marked **fixed**.
 | A60 | Persist chips/Find into `manifest.json` | **Rejected** | Still machine-local `STATE_FILE` |
 | A61 | New / Changed chips without a prior diff | **Accepted** | Empty until **Diff previous…** runs |
 | A62 | Hide-zero chips hide the whole Component row on first launch | **Fixed** | Hide only after a snapshot has rows |
+| A63 | HuggingFace `transformers` + auto-download for overview | **Rejected** | [010](010-optional-local-llms.md) |
+| A64 | Default-on Ollama | **Rejected** | Extractive default; local model opt-in later |
+| A65 | Bundle a GGUF in the unsigned exe | **Rejected** | |
+| A66 | Remote Ollama host | **Rejected** | localhost only if ever landed |
+| A67 | LLM as keep/drop instead of aliases | **Rejected** | [001](001-search-aliases.md) stays |
+| A68 | Details `objective` is ITAR-first so overview echoed the title | **Fixed** | Strip ITAR; prefer details + PDF sentences |
 
 ## Architecture of the review loop
 

@@ -130,10 +130,12 @@ Workflow chips `__open__`, `__qa__`, `__itar__`, `__new__`, `__changed__`,
 
 ## Topic overview (not a model)
 
-`topic_overview_paragraph` reads the local PDF (bounded `pypdf`) and/or
-`details/*.json` objective/description, takes the first usable sentences, and
-prefixes the title. If `pypdf` is missing, catalog + details still fill the
-paragraph.
+`topic_overview_paragraph` reads `details/*.json` objective/description and
+the local PDF (bounded `pypdf`), strips ITAR boilerplate, and keeps the first
+usable sentences, cut on a sentence boundary. If `pypdf` is missing, details
+JSON still fills the paragraph. A later **opt-in local** Ollama/llama.cpp
+query path is recorded in
+[ADR 010](docs/design-decisions/010-optional-local-llms.md) and is not landed.
 
 ## Concurrency
 
