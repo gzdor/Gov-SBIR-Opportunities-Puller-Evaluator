@@ -128,6 +128,9 @@ keep/drop gate.
 Workflow chips `__open__`, `__qa__`, `__itar__`, `__new__`, `__changed__`,
 `__due7__`, `__due14__` never enter the download phrase.
 
+Full GUI diagrams, the table pipeline, and worked `DAF UAS` examples:
+[docs/FILTER_TEXT_MATCHING_README.md](docs/FILTER_TEXT_MATCHING_README.md).
+
 ## Topic overview (not a model)
 
 `topic_overview_paragraph` reads `details/*.json` objective/description and
@@ -149,6 +152,9 @@ Q&A and details are best-effort sequential after PDFs.
 - **Solicitation / instruction PDF** — shared BAA/CSO rulebook in
   `solicitation_documents/`. The Topic pane **Open instruction PDF** button
   opens the first path listed on that row, still sandboxed by `resolve_pdf`.
+  Tech-volume and feasibility-study page limits are extracted from that PDF
+  and shown on the table; if the BAA does not state a number, the cell stays
+  blank.
 
 ## Release cadence (FY27 snapshot)
 

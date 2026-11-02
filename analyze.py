@@ -13,6 +13,7 @@ import math
 import os
 import re
 from collections import Counter
+from functools import lru_cache
 from pathlib import Path
 
 # Word-like tokens only. Never compile the user's phrase as a regex (ReDoS).
@@ -60,6 +61,9 @@ _TYPICAL_AWARD = {
 
 MAX_PDF_BYTES = 2_500_000
 MAX_PDF_PAGES = 12
+# Component-instruction / BAA preface PDFs are larger; page limits live there.
+MAX_BAA_PDF_BYTES = 12_000_000
+MAX_BAA_PDF_PAGES = 40
 
 
 def phrase_tokens(phrase: str) -> list[str]:
@@ -273,6 +277,8 @@ def catalog_blob(topic: dict) -> str:
         topic.get("overviewParagraph"),
         " ".join(str(p) for p in (topic.get("technologyAreas") or []) if p),
         topic.get("itar"),
+        topic.get("techVolLimit"),
+        topic.get("feasStudyLimit"),
     ]
     return " ".join(str(p) for p in parts if p)
 
@@ -417,23 +423,45 @@ def days_until(iso: str | None) -> str:
     return f"{delta}d"
 
 
-def extract_pdf_text(path: Path) -> str:
-    """Bounded text extract from a local topic PDF. Returns '' on any failure."""
+def extract_pdf_text(
+    path: Path,
+    max_bytes: int | None = None,
+    max_pages: int | None = None,
+) -> str:
+    """Bounded text extract from a local PDF. Returns '' on any failure."""
+    limit_bytes = MAX_PDF_BYTES if max_bytes is None else max_bytes
+    limit_pages = MAX_PDF_PAGES if max_pages is None else max_pages
     try:
-        if not path.is_file() or path.stat().st_size > MAX_PDF_BYTES:
+        if not path.is_file():
+            return ""
+        stat = path.stat()
+        if stat.st_size > limit_bytes:
             return ""
         from pypdf import PdfReader  # optional; GUI still works without it
     except Exception:
         return ""
     try:
-        reader = PdfReader(str(path), strict=False)
-        pages = reader.pages[:MAX_PDF_PAGES]
-        chunks = []
-        for page in pages:
-            chunks.append(page.extract_text() or "")
-        return "\n".join(chunks)
+        return _extract_pdf_text_cached(
+            str(path.resolve()),
+            int(stat.st_size),
+            int(stat.st_mtime),
+            limit_bytes,
+            limit_pages,
+        )
     except Exception:
         return ""
+
+
+@lru_cache(maxsize=48)
+def _extract_pdf_text_cached(
+    resolved: str, size: int, mtime: int, max_bytes: int, max_pages: int
+) -> str:
+    del size, mtime, max_bytes  # identity for cache invalidation only
+    from pypdf import PdfReader
+
+    reader = PdfReader(resolved, strict=False)
+    chunks = [page.extract_text() or "" for page in reader.pages[:max_pages]]
+    return "\n".join(chunks)
 
 
 _SECTION_STOP = re.compile(
@@ -654,6 +682,459 @@ def assess_funding(text: str, contract: str, component: str) -> str:
     return "—"
 
 
+# Known contract kinds for page-limit scoring. Do not fill these in as defaults.
+_TYPICAL_TECH_VOL_PAGES = {
+    "Phase I": 5,
+    "Phase II": 15,
+    "Direct to Phase II": 15,
+}
+
+_TECH_VOL_ANCHOR = re.compile(
+    r"technical\s+volume|volume\s*(?:2|ii)\b|tech(?:nical)?\s+vol\b",
+    re.IGNORECASE,
+)
+_FEAS_STUDY_ANCHOR = re.compile(
+    r"feasibility\s+(?:documentation|study|volume|evidence|package)|"
+    r"phase\s*i\s+feasibility|"
+    r"direct(?:ed)?(?:\s+to)?\s+phase\s*ii\s+feasibility|"
+    r"d2p2\s+feasibility",
+    re.IGNORECASE,
+)
+_NUMBER_WORDS = {
+    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
+    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
+    "nineteen": 19, "twenty": 20,
+}
+_WORD_NUM = "|".join(_NUMBER_WORDS)
+_LIMIT_LEAD = (
+    r"(?:not\s+to\s+exceed|not\s+exceed(?:ing)?|shall\s+not\s+exceed|"
+    r"must\s+not\s+exceed|no\s+more\s+than|limited\s+to|limit(?:ed)?\s+of|"
+    r"maximum\s+of|up\s+to|page\s+limit(?:\s+of)?)\s*(?:of\s+)?"
+)
+# OSD/DRPM writes "five (5) pages"; DoW BAA writes "15 pages".
+_LIMIT_PHRASE = re.compile(
+    _LIMIT_LEAD
+    + r"(?:(?P<word>" + _WORD_NUM + r")\s*)?"
+    + r"(?:\((?P<paren>\d{1,2})\)\s*)?"
+    + r"(?:(?P<digits>\d{1,2})\s*)?"
+    + r"pages?",
+    re.IGNORECASE,
+)
+_N_PAGES = re.compile(
+    r"(\d{1,2})\s*[\-–]?\s*pages?(?:\s+(?:maximum|max|limit|total))?",
+    re.IGNORECASE,
+)
+_PAREN_PAGES = re.compile(r"\((\d{1,2})\)\s*pages?", re.IGNORECASE)
+_PAGE_MAXIMUM = re.compile(
+    r"(\d{1,2})\s*page(?:s)?\s+maximum",
+    re.IGNORECASE,
+)
+_COMPOUND_TECH_PAGES = re.compile(
+    r"(\d{1,2})-page(?:s)?\s+technical\s+volume",
+    re.IGNORECASE,
+)
+_COMPOUND_FEAS_PAGES = re.compile(
+    r"(\d{1,2})-page(?:s)?\s+feasibility",
+    re.IGNORECASE,
+)
+_D2P2_SECTION = re.compile(
+    r"direct(?:ed)?\s+to\s+phase\s*ii\s*(?:\(d2p2\))?\s*proposal\s+guidelines",
+    re.IGNORECASE,
+)
+
+
+def _limit_match_count(match: re.Match) -> int | None:
+    groups = match.groupdict()
+    if groups.get("paren"):
+        n = int(groups["paren"])
+    elif groups.get("digits"):
+        n = int(groups["digits"])
+    elif groups.get("word"):
+        n = _NUMBER_WORDS.get(groups["word"].lower(), 0)
+    else:
+        try:
+            n = int(match.group(1))
+        except (IndexError, TypeError, ValueError):
+            return None
+    if 1 <= n <= 40:
+        return n
+    return None
+
+
+def _iter_page_counts(text: str) -> list[tuple[int, re.Match]]:
+    found: list[tuple[int, re.Match]] = []
+    seen: set[tuple[int, int]] = set()
+    for pattern in (_LIMIT_PHRASE, _PAGE_MAXIMUM, _PAREN_PAGES, _N_PAGES):
+        for match in pattern.finditer(text or ""):
+            n = _limit_match_count(match)
+            if n is None:
+                continue
+            key = (match.start(), n)
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append((n, match))
+    return found
+
+
+_APPLY_TO_TOPIC = re.compile(
+    r"(?:apply(?:\s+to)?(?:\s+topic)?|guidelines below apply to)\s+",
+    re.IGNORECASE,
+)
+# Cover-sheet teasers ("Guidelines below apply to CODE") are a sentence; the
+# real section ("guidelines in this section apply to topic CODE") is pages long.
+_MIN_TOPIC_SCOPE_CHARS = 300
+
+
+def _topic_guideline_slices(blob: str, code: str) -> list[str]:
+    """Each 'apply to <this topic>' span until the next apply-to-<any topic>."""
+    slices: list[str] = []
+    for match in re.finditer(
+        rf"{_APPLY_TO_TOPIC.pattern}{re.escape(code)}",
+        blob,
+        re.IGNORECASE,
+    ):
+        nxt = _APPLY_TO_TOPIC.search(blob, match.end())
+        while nxt and not re.match(r"[A-Z]{2,4}\d", blob[nxt.end() :], re.IGNORECASE):
+            nxt = _APPLY_TO_TOPIC.search(blob, nxt.end())
+        end = nxt.start() if nxt else len(blob)
+        slices.append(blob[match.start() : end])
+    return slices
+
+
+def _instruction_scope(text: str, topic_code: str = "", contract: str = "") -> str:
+    """Prefer the D2P2 (or Phase I) slice of a combined component-instruction PDF."""
+    blob = text or ""
+    heading = _D2P2_SECTION.search(blob)
+    code = (topic_code or "").strip()
+    if code:
+        slices = _topic_guideline_slices(blob, code)
+        if slices:
+            best = max(slices, key=len)
+            if len(best) >= _MIN_TOPIC_SCOPE_CHARS:
+                return best
+    if heading:
+        if contract == "Direct to Phase II":
+            return blob[heading.start() :]
+        if contract == "Phase I":
+            return blob[: heading.start()]
+    return blob
+
+
+def _text_windows(text: str, pattern: re.Pattern, before: int = 20, after: int = 160) -> list[str]:
+    blob = text or ""
+    sentences = [
+        part.strip()
+        for part in re.split(r"(?<=[.!?])\s+|\n+", blob)
+        if part.strip() and pattern.search(part)
+    ]
+    if sentences:
+        return sentences
+    windows = []
+    for match in pattern.finditer(blob):
+        start = max(0, match.start() - before)
+        end = min(len(blob), match.end() + after)
+        windows.append(blob[start:end])
+    return windows
+
+
+def _page_numbers(window: str) -> list[int]:
+    found: list[int] = []
+    for match in _LIMIT_PHRASE.finditer(window):
+        n = int(match.group(1))
+        if 1 <= n <= 40:
+            found.append(n)
+    if found:
+        return found
+    for match in _N_PAGES.finditer(window):
+        n = int(match.group(1))
+        if 1 <= n <= 40:
+            found.append(n)
+    return found
+
+
+def _contract_window_score(window: str, contract: str) -> int:
+    lower = window.lower()
+    d2p2 = bool(
+        re.search(r"direct(?:ed)?(?:\s+to)?\s+phase\s*ii|\bd2p2\b", lower)
+    )
+    phase_ii = bool(re.search(r"phase\s*ii\b", lower))
+    phase_i = bool(re.search(r"phase\s*i\b(?!\s*i)", lower)) and not phase_ii
+    if contract == "Direct to Phase II":
+        if d2p2:
+            return 5
+        if phase_ii and not phase_i:
+            return 2
+        if phase_i and not d2p2:
+            return -4
+        return 0
+    if contract == "Phase I":
+        if d2p2:
+            return -3
+        if phase_i and not phase_ii:
+            return 5
+        if phase_ii and not phase_i:
+            return -3
+        return 1
+    if contract == "Phase II":
+        if d2p2:
+            return -1
+        if phase_ii:
+            return 5
+        if phase_i:
+            return -3
+        return 1
+    return 0
+
+
+def _best_page_limit(
+    text: str,
+    anchors: re.Pattern,
+    contract: str,
+    compounds: re.Pattern | None = None,
+    rival: re.Pattern | None = None,
+    prefer: int | None = None,
+) -> int | None:
+    scored: list[tuple[int, int]] = []
+    blob = text or ""
+    if compounds:
+        for match in compounds.finditer(blob):
+            n = int(match.group(1))
+            if 1 <= n <= 40:
+                local = blob[max(0, match.start() - 80) : match.end() + 80]
+                score = 6 + _contract_window_score(local, contract)
+                scored.append((score, n))
+    for window in _text_windows(blob, anchors):
+        hits = _iter_page_counts(window)
+        our = anchors.search(window)
+        rival_hit = rival.search(window) if rival else None
+        for n, match in hits:
+            if rival_hit and our:
+                dist_our = abs(match.start() - our.start())
+                dist_rival = abs(match.start() - rival_hit.start())
+                if dist_rival < dist_our:
+                    continue
+            elif rival_hit and not our:
+                continue
+            score = _contract_window_score(window, contract)
+            if _LIMIT_PHRASE.search(window) or _PAREN_PAGES.search(window):
+                score += 3
+            scored.append((score, n))
+    for match in anchors.finditer(blob):
+        slice_end = min(len(blob), match.end() + 160)
+        slice_text = blob[match.end() : slice_end]
+        hits = _iter_page_counts(slice_text)
+        if rival:
+            rival_hit = rival.search(slice_text)
+            if rival_hit and hits and rival_hit.start() < hits[0][1].start():
+                continue
+            if rival_hit and not hits:
+                continue
+        if not hits:
+            continue
+        n, limit_hit = hits[0]
+        local = blob[match.start() : match.end() + limit_hit.end()]
+        score = _contract_window_score(local, contract) + 3
+        scored.append((score, n))
+    if not scored:
+        return None
+    scored.sort(
+        key=lambda row: (
+            -row[0],
+            abs(row[1] - prefer) if prefer is not None else row[1],
+            row[1],
+        )
+    )
+    best_score, best_n = scored[0]
+    if best_score <= 0:
+        return None
+    return best_n
+
+
+def _format_page_limit(n: int | None) -> str:
+    if n is None:
+        return ""
+    return f"{n} (stated)"
+
+
+def assess_volume_page_limits(
+    instruction_text: str = "",
+    topic_text: str = "",
+    contract: str = "",
+    topic_code: str = "",
+) -> dict[str, str]:
+    """Tech-volume and feasibility-study page limits from BAA / instruction text.
+
+    Extractive only. If the PDFs do not state a number, the field is left blank
+    — DoW typical ceilings are never filled in. Combined component PDFs
+    (Phase I plus D2P2) are scoped to the matching section.
+    """
+    scoped = _instruction_scope(instruction_text or "", topic_code, contract)
+    blob = f"{scoped}\n{topic_text or ''}"
+    kind = contract if contract in _TYPICAL_TECH_VOL_PAGES else ""
+    tech_n = _best_page_limit(
+        blob,
+        _TECH_VOL_ANCHOR,
+        kind,
+        _COMPOUND_TECH_PAGES,
+        rival=_FEAS_STUDY_ANCHOR,
+    )
+    feas_n = _best_page_limit(
+        blob,
+        _FEAS_STUDY_ANCHOR,
+        kind,
+        _COMPOUND_FEAS_PAGES,
+        rival=_TECH_VOL_ANCHOR,
+    )
+    tech = _format_page_limit(tech_n)
+    if feas_n is not None:
+        feas = _format_page_limit(feas_n)
+    elif kind == "Phase I":
+        feas = "n/a"
+    else:
+        feas = ""
+    return {"techVolLimit": tech, "feasStudyLimit": feas}
+
+
+_COMPONENT_PDF_HINTS = {
+    "ARMY": ("ARMY",),
+    "NAVY": ("NAVY",),
+    "USAF": ("DAF",),
+    "OSD": ("OSW", "DRPM"),
+    "DARPA": ("DARPA",),
+}
+
+
+def instruction_pdf_hints(topic_code: str = "", component: str = "") -> list[str]:
+    """Filename fragments that identify this topic's component instruction PDF."""
+    hints: list[str] = []
+    code = (topic_code or "").strip().upper()
+    if code:
+        hints.append(code.split("-", 1)[0])
+        if len(code) >= 3:
+            hints.append(code[:3])
+    agency = (component or "").strip().upper().split("/", 1)[0].strip()
+    hints.extend(_COMPONENT_PDF_HINTS.get(agency, ()))
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for hint in hints:
+        if hint and hint not in seen:
+            seen.add(hint)
+            ordered.append(hint)
+    return ordered
+
+
+def instruction_pdf_paths(
+    output_dir: Path | None,
+    names: list[str],
+    topic_code: str = "",
+    component: str = "",
+) -> list[Path]:
+    """This topic's instruction / preface PDFs only — not every file in the folder."""
+    if output_dir is None:
+        return []
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+
+    def _add(path: Path | None) -> None:
+        if path is None:
+            return
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        ordered.append(path)
+
+    for name in names or []:
+        path = resolve_pdf(output_dir, str(name))
+        if path is None:
+            path = resolve_pdf(
+                output_dir, str(Path("solicitation_documents") / Path(str(name)).name)
+            )
+        _add(path)
+    extra = output_dir / "solicitation_documents"
+    hints = instruction_pdf_hints(topic_code, component)
+    if extra.is_dir() and hints:
+        extras = [
+            path
+            for path in extra.glob("*.pdf")
+            if "preface" not in path.name.lower()
+            and any(hint in path.name.upper() for hint in hints)
+        ]
+        extras.sort(key=lambda p: p.name.lower())
+        for path in extras:
+            _add(resolve_pdf(output_dir, str(path.relative_to(output_dir))))
+    ordered.sort(
+        key=lambda p: ("preface" in p.name.lower(), p.name.lower())
+    )
+    return ordered
+
+
+def instruction_pdf_text(
+    output_dir: Path | None,
+    names: list[str],
+    topic_code: str = "",
+    component: str = "",
+) -> str:
+    """Concat bounded text from local instruction / preface PDFs. Prefers non-preface."""
+    chunks: list[str] = []
+    for path in instruction_pdf_paths(output_dir, names, topic_code, component):
+        text = extract_pdf_text(
+            path, max_bytes=MAX_BAA_PDF_BYTES, max_pages=MAX_BAA_PDF_PAGES
+        )
+        if text:
+            chunks.append(text)
+    return "\n".join(chunks)
+
+
+def refresh_volume_page_limits(
+    row: dict, output_dir: Path | None, topic_text: str = ""
+) -> dict:
+    """Overwrite page-limit fields from local instruction PDFs. Never keeps typicals."""
+    if output_dir is None and not topic_text:
+        for key in ("techVolLimit", "feasStudyLimit"):
+            if "typical" in str(row.get(key) or "").lower():
+                row[key] = ""
+        return row
+    code = str(row.get("code") or row.get("topicCode") or "")
+    component = str(row.get("component") or row.get("client") or "")
+    names = [
+        str(item)
+        for item in (row.get("instructionPdfs") or row.get("solicitationDocuments") or [])
+        if item
+    ]
+    paths = instruction_pdf_paths(output_dir, names, topic_code=code, component=component)
+    if output_dir and paths:
+        base = output_dir.resolve()
+        rels: list[str] = []
+        for path in paths:
+            try:
+                rels.append(path.resolve().relative_to(base).as_posix())
+            except ValueError:
+                continue
+        if rels:
+            row["instructionPdfs"] = rels
+    pdf_text = topic_text
+    pdf_name = str(row.get("pdf") or "")
+    if not pdf_text and output_dir and pdf_name and pdf_name not in {"Failed", "—"}:
+        path = resolve_pdf(output_dir, pdf_name)
+        if path is not None:
+            pdf_text = extract_pdf_text(path)
+    limits = assess_volume_page_limits(
+        instruction_text=instruction_pdf_text(
+            output_dir, names, topic_code=code, component=component
+        ),
+        topic_text=pdf_text,
+        contract=str(row.get("contract") or ""),
+        topic_code=code,
+    )
+    row["techVolLimit"] = limits["techVolLimit"]
+    row["feasStudyLimit"] = limits["feasStudyLimit"]
+    return row
+
+
 def extract_bluf_from_text(
     text: str,
     title: str = "",
@@ -729,6 +1210,7 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         "topicId": topic.get("topicId") or "",
         "code": code or "—",
         "title": title or "—",
+        "component": component,
         "client": client,
         "program": program or "—",
         "status": topic.get("topicStatus") or "—",
@@ -759,7 +1241,10 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
             or []
         ),
         "overviewParagraph": topic.get("overviewParagraph") or "",
+        "techVolLimit": "",
+        "feasStudyLimit": "",
     }
+    refresh_volume_page_limits(row, output_dir, topic_text=pdf_text)
     details = load_topic_details(output_dir, row)
     if isinstance(details, dict):
         apply_details_fields(row, details)
@@ -1126,6 +1611,10 @@ def format_capture_brief(row: dict) -> str:
             f"Contract: {row.get('contract') or '—'}"
         ),
         f"Funding: {row.get('funding') or '—'}",
+        (
+            f"Tech vol page limit: {row.get('techVolLimit') or ''} · "
+            f"Feasibility study page limit: {row.get('feasStudyLimit') or ''}"
+        ),
         f"CMMC: {row.get('cmmc') or '—'} · Q&A published: {published_qa_count(row)}",
     ]
     if call:
@@ -1152,6 +1641,8 @@ BLUF_CSV_COLUMNS = (
     "trl",
     "funding",
     "contract",
+    "techVolLimit",
+    "feasStudyLimit",
     "pdf",
     "qaPublished",
     "cmmc",

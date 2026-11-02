@@ -10,7 +10,9 @@ the Tk tests skip instead of failing.
 from __future__ import annotations
 
 import queue
+import shutil
 import time
+from pathlib import Path
 
 import json
 
@@ -191,6 +193,35 @@ def test_gui_download_button_runs_full_flow(tmp_path, monkeypatch):
         root.destroy()
 
 
+def test_gui_page_limit_columns_and_sort():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        assert "techVolLimit" in app._columns
+        assert "feasStudyLimit" in app._columns
+        assert app.table.heading("techVolLimit", "text") == "Tech Vol Page Limit"
+        assert app.table.heading("feasStudyLimit", "text") == "Feasibility Study Page Limit"
+        app._bluf_rows = [
+            _bluf("t0", "DAF01", "Air", techVolLimit="15 (stated)", feasStudyLimit="5 (stated)"),
+            _bluf("t1", "DAF02", "More", techVolLimit="5 (stated)", feasStudyLimit="n/a"),
+        ]
+        app._sort_column = "techVolLimit"
+        app._sort_reverse = False
+        app._render_table()
+        root.update()
+        codes = [app.table.item(iid, "values")[app._columns.index("code")] for iid in app.table.get_children()]
+        assert codes[0] == "DAF02"
+        values = _row_values(app, app.table.get_children()[1])
+        assert values["techVolLimit"] == "15 (stated)"
+        assert values["feasStudyLimit"] == "5 (stated)"
+        app._show_detail(app._bluf_rows[0])
+        body = app.detail_text.get("1.0", "end")
+        assert "Tech vol page limit: 15 (stated)" in body
+        assert "Feasibility study page limit: 5 (stated)" in body
+    finally:
+        root.destroy()
+
+
 def test_gui_table_find_and_dark_theme():
     root = _make_root()
     try:
@@ -293,6 +324,51 @@ def test_gui_catalog_ready_fills_table_before_pdfs():
         assert len(app.table.get_children()) == 1
         assert app._bluf_rows[0]["pdfStatus"] == "pending"
         assert "PDFs 0/1" in app.bluf_caption_var.get()
+    finally:
+        root.destroy()
+
+
+def test_gui_fills_page_limits_after_solicitation_pdfs(tmp_path):
+    fixture = (
+        Path(__file__).resolve().parent / "fixtures" / "OSW-DRPM_SBIR_27BZ_R1.pdf"
+    )
+    if not fixture.is_file():
+        pytest.skip("OSW-DRPM instruction PDF fixture is not present")
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app.output_dir = tmp_path
+        app._handle_event(
+            (
+                "catalog_ready",
+                [
+                    {
+                        "topicId": "aa95ca4aa0f14efebd0f991a37aec1bc_86695",
+                        "topicCode": "OSW27BZ01-DV002",
+                        "topicTitle": "Counter-Unmanned Aerial Systems Rapid Maturation",
+                        "topicStatus": "Open",
+                        "component": "OSD",
+                        "command": "DRPM UxS",
+                        "program": "SBIR",
+                        "pdfStatus": "pending",
+                    }
+                ],
+            )
+        )
+        root.update()
+        assert app._bluf_rows[0]["techVolLimit"] == ""
+        assert app._bluf_rows[0]["feasStudyLimit"] == ""
+        shutil.copy(fixture, dest / "OSW-DRPM_SBIR_27BZ_R1.pdf")
+        app._handle_event(("start_phase", "solicitation PDF", 1))
+        app._handle_event(("end_phase",))
+        root.update()
+        assert app._bluf_rows[0]["techVolLimit"] == "5 (stated)"
+        assert app._bluf_rows[0]["feasStudyLimit"] == "5 (stated)"
+        values = _row_values(app)
+        assert values["techVolLimit"] == "5 (stated)"
+        assert values["feasStudyLimit"] == "5 (stated)"
     finally:
         root.destroy()
 

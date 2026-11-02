@@ -1,7 +1,13 @@
 from pathlib import Path
 
+import pytest
+
 import analyze
 import main
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+_OSW_INSTRUCTIONS = _FIXTURES / "OSW-DRPM_SBIR_27BZ_R1.txt"
+_OSW_INSTRUCTIONS_PDF = _FIXTURES / "OSW-DRPM_SBIR_27BZ_R1.pdf"
 
 
 def test_empty_phrase_keeps_every_topic():
@@ -64,6 +70,199 @@ def test_trl_ignores_cmmc_level_and_uses_stated_trl():
     text = "PROJECTED CMMC LEVEL REQUIREMENT: Level 2 (Self)\nOBJECTIVE:\nBuild a sensor. Technology readiness level 5 is required.\nPHASE I: Feasibility."
     bluf = analyze.extract_bluf_from_text(text, title="Sensor", topic_code="NV001")
     assert bluf["trl"] == "5 (stated)"
+
+
+def test_volume_page_limits_from_baa_text():
+    baa = """
+    Volume 2: Technical Volume.
+    The Technical Volume for Phase I proposals shall not exceed 5 pages.
+    The Technical Volume for Direct to Phase II proposals shall not exceed 15 pages.
+    Feasibility documentation for Direct to Phase II shall not exceed 5 pages.
+    """
+    d2p2 = analyze.assess_volume_page_limits(baa, contract="Direct to Phase II")
+    assert d2p2["techVolLimit"] == "15 (stated)"
+    assert d2p2["feasStudyLimit"] == "5 (stated)"
+    phase_i = analyze.assess_volume_page_limits(baa, contract="Phase I")
+    assert phase_i["techVolLimit"] == "5 (stated)"
+    assert phase_i["feasStudyLimit"] == "n/a"
+    compound = analyze.assess_volume_page_limits(
+        "Offerors shall submit a 15-page Technical Volume and a 5-page feasibility study.",
+        contract="Direct to Phase II",
+    )
+    assert compound["techVolLimit"] == "15 (stated)"
+    assert compound["feasStudyLimit"] == "5 (stated)"
+    glued = analyze.assess_volume_page_limits(
+        "Technical Volume shall not exceed 15 pages Feasibility documentation shall not exceed 5 pages",
+        contract="Direct to Phase II",
+    )
+    assert glued["techVolLimit"] == "15 (stated)"
+    assert glued["feasStudyLimit"] == "5 (stated)"
+
+
+def test_osw_dv002_drpm_uxs_page_limits_are_five_and_five():
+    """Truth: OSD/DRPM UxS D2P2 topic OSW27BZ01-DV002 is 5 + 5 pages.
+
+    Component instructions spell the limit as 'five (5) pages' and also put a
+    2-page Phase I (NV001) rule earlier in the same PDF. The scraper must
+    use the D2P2 section, not DoW typical 15-page Phase II.
+    """
+    text = _OSW_INSTRUCTIONS.read_text(encoding="utf-8")
+    assert "five (5) pages" in text
+    limits = analyze.assess_volume_page_limits(
+        text,
+        contract="Direct to Phase II",
+        topic_code="OSW27BZ01-DV002",
+    )
+    assert limits["techVolLimit"] == "5 (stated)"
+    assert limits["feasStudyLimit"] == "5 (stated)"
+
+
+def test_osw_nv001_phase_i_tech_vol_is_two_pages():
+    text = _OSW_INSTRUCTIONS.read_text(encoding="utf-8")
+    limits = analyze.assess_volume_page_limits(
+        text,
+        contract="Phase I",
+        topic_code="OSW27BZ01-NV001",
+    )
+    assert limits["techVolLimit"] == "2 (stated)"
+    assert limits["feasStudyLimit"] == "n/a"
+
+
+def test_osw_dv002_d2p2_heading_without_topic_code_is_still_five():
+    """Same PDF, no topic code: use the D2P2 heading, not DoW typical 15."""
+    text = _OSW_INSTRUCTIONS.read_text(encoding="utf-8")
+    limits = analyze.assess_volume_page_limits(text, contract="Direct to Phase II")
+    assert limits["techVolLimit"] == "5 (stated)"
+    assert limits["feasStudyLimit"] == "5 (stated)"
+
+
+def test_bluf_row_osw_dv002_reads_instruction_pdf(tmp_path):
+    if not _OSW_INSTRUCTIONS_PDF.is_file():
+        pytest.skip("OSW-DRPM instruction PDF fixture is not present")
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    pdf = dest / "OSW-DRPM_SBIR_27BZ_R1.pdf"
+    pdf.write_bytes(_OSW_INSTRUCTIONS_PDF.read_bytes())
+    row = analyze.bluf_row(
+        {
+            "topicId": "aa95ca4aa0f14efebd0f991a37aec1bc_86695",
+            "topicCode": "OSW27BZ01-DV002",
+            "topicTitle": "Counter-Unmanned Aerial Systems Rapid Maturation",
+            "component": "OSD",
+            "command": "DRPM UxS",
+            "program": "SBIR",
+            "topicStatus": "Open",
+            "instructionPdfs": ["solicitation_documents/OSW-DRPM_SBIR_27BZ_R1.pdf"],
+        },
+        tmp_path,
+    )
+    assert row["contract"] == "Direct to Phase II"
+    assert row["techVolLimit"] == "5 (stated)"
+    assert row["feasStudyLimit"] == "5 (stated)"
+
+
+def test_volume_page_limits_blank_when_baa_silent():
+    d2p2 = analyze.assess_volume_page_limits("", contract="Direct to Phase II")
+    assert d2p2["techVolLimit"] == ""
+    assert d2p2["feasStudyLimit"] == ""
+    phase_i = analyze.assess_volume_page_limits("", contract="Phase I")
+    assert phase_i["techVolLimit"] == ""
+    assert phase_i["feasStudyLimit"] == "n/a"
+    none = analyze.assess_volume_page_limits("", contract="—")
+    assert none["techVolLimit"] == ""
+    assert none["feasStudyLimit"] == ""
+
+
+def test_osw_dv002_still_five_when_preface_says_fifteen():
+    """DoW BAA preface 15-page D2P2 must not override OSD/DRPM's five-page cap."""
+    preface = """
+    DIRECT TO PHASE II PROPOSAL GUIDELINES
+    The Technical Volume for Direct to Phase II proposals shall not exceed 15 pages.
+    Feasibility documentation for Direct to Phase II shall not exceed 5 pages.
+    """
+    text = preface + "\n" + _OSW_INSTRUCTIONS.read_text(encoding="utf-8")
+    limits = analyze.assess_volume_page_limits(
+        text,
+        contract="Direct to Phase II",
+        topic_code="OSW27BZ01-DV002",
+    )
+    assert limits["techVolLimit"] == "5 (stated)"
+    assert limits["feasStudyLimit"] == "5 (stated)"
+
+
+def test_instruction_pdf_paths_only_this_topic(tmp_path):
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    (dest / "OSW-DRPM_SBIR_27BZ_R1.pdf").write_bytes(b"%PDF-1.4\n%")
+    (dest / "NAVY_SBIR_27BZ_PH I_R1_v2.pdf").write_bytes(b"%PDF-1.4\n%")
+    (dest / "DoW 2027 SBIR BAA Preface_10072026.pdf").write_bytes(b"%PDF-1.4\n%")
+    paths = analyze.instruction_pdf_paths(
+        tmp_path,
+        [
+            "solicitation_documents/DoW 2027 SBIR BAA Preface_10072026.pdf",
+            "solicitation_documents/OSW-DRPM_SBIR_27BZ_R1.pdf",
+        ],
+        topic_code="OSW27BZ01-DV002",
+    )
+    names = [path.name for path in paths]
+    assert "OSW-DRPM_SBIR_27BZ_R1.pdf" in names
+    assert "DoW 2027 SBIR BAA Preface_10072026.pdf" in names
+    assert "NAVY_SBIR_27BZ_PH I_R1_v2.pdf" not in names
+
+
+def test_instruction_pdf_paths_finds_component_file_without_names(tmp_path):
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    (dest / "OSW-DRPM_SBIR_27BZ_R1.pdf").write_bytes(b"%PDF-1.4\n%")
+    (dest / "NAVY_SBIR_27BZ_PH I_R1_v2.pdf").write_bytes(b"%PDF-1.4\n%")
+    osw = analyze.instruction_pdf_paths(
+        tmp_path, [], topic_code="OSW27BZ01-DV002", component="OSD"
+    )
+    assert [path.name for path in osw] == ["OSW-DRPM_SBIR_27BZ_R1.pdf"]
+    navy = analyze.instruction_pdf_paths(
+        tmp_path, [], topic_code="DON27BZ01-NV001", component="NAVY"
+    )
+    assert [path.name for path in navy] == ["NAVY_SBIR_27BZ_PH I_R1_v2.pdf"]
+
+
+def test_refresh_overwrites_cached_typical_with_osw_pdf(tmp_path):
+    if not _OSW_INSTRUCTIONS_PDF.is_file():
+        pytest.skip("OSW-DRPM instruction PDF fixture is not present")
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    pdf = dest / "OSW-DRPM_SBIR_27BZ_R1.pdf"
+    pdf.write_bytes(_OSW_INSTRUCTIONS_PDF.read_bytes())
+    row = {
+        "code": "OSW27BZ01-DV002",
+        "contract": "Direct to Phase II",
+        "instructionPdfs": ["solicitation_documents/OSW-DRPM_SBIR_27BZ_R1.pdf"],
+        "techVolLimit": "15 (typical Direct to Phase II)",
+        "feasStudyLimit": "5 (typical Direct to Phase II)",
+    }
+    analyze.refresh_volume_page_limits(row, tmp_path)
+    assert row["techVolLimit"] == "5 (stated)"
+    assert row["feasStudyLimit"] == "5 (stated)"
+
+
+def test_bluf_row_reads_instruction_pdf_page_limits(tmp_path):
+    dest = tmp_path / "solicitation_documents"
+    dest.mkdir()
+    pdf = dest / "DAF_CSO_instructions.pdf"
+    pdf.write_bytes(b"%PDF-1.4\n%")
+    row = analyze.bluf_row(
+        {
+            "topicId": "t0",
+            "topicCode": "DAF27BZ01-DV008",
+            "topicTitle": "TDP Modernization",
+            "component": "USAF",
+            "program": "SBIR",
+            "instructionPdfs": ["solicitation_documents/DAF_CSO_instructions.pdf"],
+        },
+        tmp_path,
+    )
+    assert row["contract"] == "Direct to Phase II"
+    assert row["techVolLimit"] == ""
+    assert row["feasStudyLimit"] == ""
 
 
 def test_funding_falls_back_to_typical_ceiling():

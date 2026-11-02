@@ -1,0 +1,559 @@
+ 
+OSW/DRPMUxS -1 
+Direct Report Portfolio Manager for Unmanned Systems (DRPM UxS) 
+2027 Small Business Innovation Research (SBIR) BAA 
+Release 1 
+Proposal Submission Instructions 
+INTRODUCTION 
+The Office of the Secretary of War (OSW) SBIR/STTR Program supports the rapid maturation of 
+commercial and dual-use technology to meet operational needs across the Department. Under this release, 
+the Direct Report Portfolio Manager for Unmanned Systems (DRPM UxS), in partnership with the Office 
+of the Assistant Secretary of War for Special Operations and Low Intensity Conflict (OASW(SO/LIC)), is 
+the sponsoring organization for the Counter-Unmanned Aerial Systems Rapid Maturation effort. 
+These instructions apply to the following topics in this release: 
+• OSW27BZ01-NV001, Counter-Unmanned Aerial Systems Rapid Maturation. This topic accepts 
+Phase I proposals only. 
+• OSW27BZ01-DV002, Counter-Unmanned Aerial Systems Rapid Maturation. This topic accepts 
+Direct to Phase II proposals only. 
+ 
+Proposers must select the topic corresponding to the type of proposal they intend to submit. The Phase I 
+Proposal Guidelines below apply to OSW27BZ01-NV001. The Direct to Phase II Proposal Guidelines 
+apply to OSW27BZ01-DV002. 
+Proposers responding to a topic in this solicitation must follow all general instructions provided in the 
+Department of War (DoW) SBIR Program solicitation. DRPM UxS requirements in addition to or 
+deviating from the DoW Program solicitation are provided in the instructions below. Where these 
+instructions and the DoW SBIR Program BAA conflict, the DoW SBIR Program BAA governs. 
+Proposers are encouraged to thoroughly review the DoW solicitation and register for the DSIP 
+Listserv to remain apprised of important programmatic and contractual changes. 
+• The full DoW solicitation is available on DSIP at 
+https://www.dodsbirsttr.mil/submissions/solicitation-documents/active-solicitations. Be sure to 
+select the tab for the appropriate solicitation cycle. 
+• Register for the DSIP Listserv at: https://www.dodsbirsttr.mil/submissions/login. 
+ 
+Specific questions pertaining to the administration of the DRPM UxS SBIR/STTR Program and these 
+proposal preparation instructions shall be directed to: Lerani Wolk, lerani.v.wolk.civ@mail.mil. 
+PHASE I PROPOSAL GUIDELINES 
+The guidelines in this section apply to topic OSW27BZ01-NV001. The DoW SBIR/STTR Innovation 
+Portal (DSIP) is the official portal for DoW SBIR/STTR proposal submission. Proposers are required to 
+submit proposals via DSIP; proposals submitted by any other means will be disregarded. Detailed 
+instructions regarding registration and proposal submission via DSIP are provided in the DoW 
+solicitation. 
+Proposal Coversheet (Volume 1) 
+The proposal coversheet is prepared on DSIP and in accordance with the DoW solicitation. The 
+technical abstract and the anticipated benefits and commercial applications discussion may be 
+publicly released if the proposal is selected. Do not include proprietary, export-controlled, 
+controlled unclassified, or classified information in any coversheet field intended for public 
+release. 
+ 
+ 
+OSW/DRPMUxS -2 
+Technical Volume (Volume 2) 
+The technical volume is not to exceed two (2) pages and must follow the formatting requirements 
+provided in the DoW SBIR solicitation, except that the Technical Volume must be uploaded as 
+one searchable Portable Document Format (PDF), must use consecutively numbered pages, and 
+must include the proposing small business concern's name, topic number, and DSIP-assigned 
+proposal number in the header of each page. Graphics, tables, charts, references, and attachments 
+included in Volume 2 count toward the page limit. Any pages in the technical volume over two 
+pages will not be considered in proposal evaluations. 
+Content of the Technical Volume 
+The proposing small business concern must prepare Volume 2 using the Phase I Technical 
+Volume Template provided as a separate attachment to this topic. The template identifies the 
+content required in each section and corresponds to the criteria in the Phase I Evaluation Rubric. 
+Volume 2 must state where the proposed approach stands against each of the four operating 
+preferences identified in the topic. 
+Cost Volume (Volume 3) 
+The Phase I amount must not exceed $300,000. There is no priced option under this topic. The 
+maximum Phase I period of performance is six (6) months. 
+Cost is not an evaluation criterion under this topic. The Government will review Volume 3 for 
+completeness, allowability, reasonableness, compliance with the cost ceiling, and compliance 
+with applicable percentage-of-work requirements. 
+Please review the updated Percentage of Work (POW) calculation details included in the DoW 
+solicitation. DRPM UxS will not accept any deviation to the POW requirements. 
+Company Commercialization Report (CCR) (Volume 4) 
+Completion of the CCR as Volume 4 of the proposal submission in DSIP is required. Please refer 
+to the DoW solicitation for full details on this requirement. Information contained in the CCR will 
+not be considered by DRPM UxS during proposal evaluations. 
+Supporting Documents (Volume 5) 
+Volume 5 is provided for proposing Small Business Concerns (SBCs) to submit additional 
+documentation to support the Coversheet (Volume 1), Technical Volume (Volume 2), and the 
+Cost Volume (Volume 3). Please refer to the DoW solicitation for more information. Supporting 
+documents must not be used to evade the Technical Volume page limit. Evaluators will consider 
+only those documents identified as evaluable in these instructions and the applicable rubric. 
+Fraud, Waste and Abuse Training (Volume 6) 
+Fraud, Waste and Abuse training material can be found in the Volume 6 section of the proposal 
+submission module in DSIP and must be thoroughly reviewed once per year to proceed with 
+proposal submission. 
+Disclosures of Foreign Affiliations or Relationships to Foreign Countries (Volume 7) 
+SBCs must complete the Disclosures of Foreign Affiliations or Relationships to Foreign 
+Countries webform in Volume 7 of the DSIP proposal submission. Please be aware that the 
+Disclosures of Foreign Affiliations or Relationships to Foreign Countries WILL NOT be accepted 
+as a PDF Supporting Document in Volume 5 of the DSIP proposal submission. Do not upload 
+any previous versions of this form to Volume 5. For additional details, please refer to the DoW 
+Program BAA. 
+ 
+OSW/DRPMUxS -3 
+DIRECT TO PHASE II (D2P2) PROPOSAL GUIDELINES 
+The guidelines in this section apply to topic OSW27BZ01-DV002. 
+15 U.S.C. §638 (cc), allows DoW to make a SBIR Phase II award to a small business concern with 
+respect to a project, without regard to whether the small business concern was provided an award under 
+Phase I of the SBIR program with respect to such project. 
+This topic requires that proposers provide documentation to demonstrate that the feasibility described in 
+the Phase I portion of the topic has been met. Feasibility documentation cannot be based upon or 
+logically extend from any prior or ongoing federally funded SBIR or STTR work. Work submitted 
+within the feasibility documentation must have been substantially performed by the proposer and/or the 
+principal investigator (PI). If technology in the feasibility documentation is subject to intellectual property 
+(IP), the proposer must either own the IP or must have obtained license rights to such technology prior to 
+proposal submission, to enable it and its subcontractors to legally carry out the proposed work. 
+If the proposer fails to demonstrate technical merit and feasibility equivalent to the Phase I level as 
+described in the associated topic, the related Phase II proposal will not be evaluated. 
+DRPM UxS deviation from the standard Direct to Phase II volume structure: under this topic, the 
+Technical Volume is limited to five (5) pages in total and constitutes the entire body of the D2P2 
+technical proposal. Phase I-equivalent feasibility documentation is submitted separately, as evidence in 
+Volume 5, limited to five (5) pages, rather than as part of Volume 2. This structure is intentional and 
+reflects the short-form submission model used for this topic. 
+Complete D2P2 proposals must include the following: 
+• Volume 1: Proposal Cover Sheet 
+• Volume 2: Technical Volume (5 page Maximum, total) 
+• Volume 3: Cost Volume 
+• Volume 4: Company Commercialization Report 
+• Volume 5: Supporting Documents, including Phase I-equivalent feasibility documentation (5 
+page Maximum) 
+• Volume 6: Fraud Waste and Abuse Certification 
+• Volume 7: Disclosure of Foreign Affiliations or Relationships to Foreign Countries 
+ 
+Phase II proposals require a comprehensive, detailed submission of the proposed effort. Commercial and 
+military potential of the technology under development is extremely important. Proposals emphasizing 
+dual-use applications and commercial exploitation of resulting technologies are sought. 
+Volume 1 - Cover Sheet 
+The proposal cover sheet is prepared on DSIP. The cover sheet must include a brief technical abstract that 
+describes the proposed R&D project and an anticipated benefits and potential commercial applications 
+discussion. Each section shall be no more than 3,000 characters. Do not include proprietary or 
+classified information in the proposal cover sheet. If your proposal is selected for negotiation and 
+possible award, the technical abstract and anticipated benefits discussion may be publicly released online.  
+DSIP will assign a proposal number once the cover sheet is saved. You may modify the cover sheet as 
+needed until the topic closes. 
+Volume 2 - Technical Volume (5 pages) 
+The Direct to Phase II Technical Volume must not exceed five (5) pages in total, inclusive of all graphics, 
+figures, tables, charts, citations, and attachments contained in Volume 2. This five-page limit covers the 
+entire body of the proposal. Pages exceeding the established limit will not be evaluated. The formatting 
+ 
+OSW/DRPMUxS -4 
+requirements stated in the Phase I Technical Volume section above apply equally to Direct to Phase II 
+proposals. 
+The proposing SBC must prepare Volume 2 using the Direct to Phase II Technical Volume Template 
+provided as a separate attachment to this topic. The template identifies the content required in each 
+section and corresponds to the criteria in the Direct to Phase II Evaluation Rubric. Volume 2 must state 
+where the proposed approach stands against each of the four operating preferences identified in the topic. 
+Proposers are responsible for planning and budgeting for required test authority, range access, spectrum 
+authorization, threat surrogates, equipment, facilities, and other resources necessary to execute the 
+proposed effort. 
+Volume 3 - Cost Volume 
+Direct to Phase II proposals must not exceed a cost of $2,000,000 and a duration of twelve (12) months. 
+A detailed, Phase II Cost Volume must be submitted online and in the proper format shown in the Cost 
+Breakdown Guidance in the DoW SBIR Program BAA. Some items in the cost volume template may not 
+apply to the proposed project. Provide enough information to allow evaluators to assess the proposer's 
+plans to use the requested funds if the contract is awarded. 
+Cost is not an evaluation criterion under this topic. The Government will review Volume 3 for 
+completeness, allowability, reasonableness, compliance with the cost ceiling, and compliance with 
+applicable percentage-of-work requirements. DRPM UxS will not accept any deviation to the POW 
+requirements. 
+Volume 4 - Company Commercialization Report (CCR)  (Required) 
+Completion of the CCR as Volume 4 of the proposal submission in DSIP is required. Please refer to the 
+DoW SBIR Program BAA for full details on this requirement. The information contained in the CCR will 
+not be considered during proposal evaluations. 
+Volume 5 - Supporting Documents 
+Volume 5 must include all documents and certifications required by the DoW SBIR Program BAA and 
+these Component-Specific Proposal Submission Instructions. 
+Phase I-equivalent feasibility documentation is required in Volume 5 and must not exceed five (5) 
+pages. Feasibility documentation is supporting evidence and does not count toward the five-page 
+Technical Volume limit. The documentation must demonstrate that: 
+• The proposed technology has achieved the scientific and technical merit and feasibility described 
+in the Phase I portion of this topic; 
+• The documented work was substantially performed by the proposing SBC and/or the proposed PI; 
+• The feasibility work was not based solely on, and does not logically extend from, prior or 
+ongoing federally funded SBIR or STTR work; 
+• The proposing SBC owns, or holds sufficient license rights to, any intellectual property necessary 
+for the concern and its subcontractors to perform the proposed effort; and 
+• The prior work supports the proposed technical approach, performance objectives, and transition 
+or commercialization potential. 
+ 
+Acceptable feasibility evidence may include test data, analyses, technical reports, prototype descriptions, 
+modeling and simulation results, laboratory or field-test results, relevant internal research and 
+development results, and other objective evidence of feasibility. A system design alone is not sufficient. A 
+self-declared technology readiness level unsupported by a documented test is not sufficient. 
+ 
+OSW/DRPMUxS -5 
+Volume 5 may also include data-rights assertions, subcontractor or consultant letters of commitment, 
+documentation supporting proposed costs, prior/current/pending support information, and foreign-citizen 
+information, each as applicable. Supporting documents must not be used to evade the Technical Volume 
+page limit. 
+Volume 6 - Fraud Waste and Abuse Certification (Required) 
+Fraud, Waste and Abuse training material can be found in the Volume 6 section of the proposal 
+submission module in DSIP and must be thoroughly reviewed once per year to proceed with proposal 
+submission. 
+Volume 7 - Disclosures of Foreign Affiliations or Relationships to Foreign Countries (Required) 
+Small business concerns must complete the Disclosures of Foreign Affiliations or Relationships to 
+Foreign Countries webform in Volume 7 of the DSIP proposal submission. Please be aware that the 
+Disclosures of Foreign Affiliations or Relationships to Foreign Countries WILL NOT be accepted as a 
+PDF Supporting Document in Volume 5 of the DSIP proposal submission. Do not upload any previous 
+versions of this form to Volume 5. For additional details, please refer to the DoW SBIR Program BAA. 
+PHASE II PROPOSAL GUIDELINES 
+Phase II proposals under OSW27BZ01-NV001 may only be submitted by Phase I awardees under that 
+topic. A Phase I award does not guarantee a Phase II award. Subject to successful completion of Phase I, 
+demonstrated technical progress, continued Government need, availability of funds, and all applicable 
+statutory, regulatory, and DoW SBIR Program BAA requirements, a Phase I awardee may be eligible for 
+a subsequent Phase II award without further competition. 
+The Government may request a Phase II proposal from an eligible Phase I awardee during the Phase I 
+period of performance or after Phase I completion. Any such request will provide the applicable proposal 
+due date, technical requirements, cost and period-of-performance limits, evaluation criteria, and 
+submission instructions. 
+The anticipated Phase II objective is to mature the selected capability to a functional system, software 
+package, or physical prototype suitable for test and evaluation in a militarily relevant or simulated field 
+environment, with a target of Technology Readiness Level 6. The anticipated Phase II period of 
+performance is twelve (12) months. Proposers shall not assume that a Phase I award, or a request for a 
+Phase II proposal, constitutes a commitment of future funding. 
+DISCRETIONARY TECHNICAL AND BUSINESS ASSISTANCE (TABA) 
+The OSW SBIR/STTR Program will consider TABA requests in accordance with 15 U.S.C. § 638(q). 
+Phase I awardees may request up to $6,500 in TABA funding; Phase II awardees may request up to 
+$50,000 per Phase II project. TABA funding is in addition to the Phase I and Phase II cost ceilings and is 
+not subject to profit/fee. Refer to the DoW Program BAA for detailed information about TABA funding, 
+allowable services and requirements. 
+All requests for TABA must be completed using the SBIR/STTR TABA Request Form found here. The 
+completed form must be included in Volume 5 of the proposal submission in DSIP. OSW will not accept 
+requests for TABA that do not utilize the SBIR/STTR TABA Request Form or as a submission document 
+included in Volume 5. 
+EVALUATION AND SELECTION 
+All proposals will be evaluated in accordance with the evaluation criteria listed in the DoW solicitation. 
+In addition, proposals under these topics will be evaluated using the criteria and rating approach in the 
+separate evaluation rubric applicable to the proposal type:  
+ 
+OSW/DRPMUxS -6 
+Phase I Evaluation Rubric for OSW27BZ01-NV001  
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+ 
+OSW/DRPMUxS -7 
+Direct to Phase II Evaluation Rubric for OSW27BZ01-DV002 
+ 
+ 
+ 
+ 
+
+ 
+OSW/DRPMUxS -8 
+Direct to Phase II proposals will first undergo a feasibility determination using the Volume 5 feasibility 
+documentation. Only proposals that establish Phase I-equivalent feasibility will proceed to evaluation of 
+the technical proposal. If the Government determines that the proposer has not established feasibility, the 
+proposal will not receive further evaluation. The Government will evaluate only the material permitted by 
+these instructions and the applicable rubric. 
+All awards are subject to the availability of funds. The Government reserves the right to make one or 
+more awards, or no award, under either topic, and to limit the number of awards based on availability of 
+funds. The Government is not obligated to make an award. Submission of a proposal does not authorize 
+the proposer to begin work or incur costs on behalf of the Government. 
+DRPMUxS uses support contractor personnel in the administration of these topics.  Support contractor 
+personnel with access to proposal information are subject to non-disclosure obligations and may not 
+participate in source selection decisions. 
+Proposing firms will be notified of selection or non-selection status within 90 days of the closing date of 
+the topic. Notification will be provided through DSIP to the Corporate Official identified in the proposal, 
+with a copy to the Principal Investigator. 
+Refer to the DoW solicitation for procedures to protest the Announcement. 
+AWARD INFORMATION 
+Direct Report Portfolio Manager for Unmanned Systems (DRPM UxS) intends to execute prototype other 
+transaction agreement awards as a result of this solicitation in accordance with 10 U.S.C. 4022.  
+The projected Cybersecurity Maturity Model Certification (CMMC) level at the time of award for these 
+topics is Level 2 (Self). A firm without a current self-assessment posted in Supplier Performance Risk 
+System (SPRS) is strongly encouraged to begin that process now. This must be completed by time of 
+award. 
+These topics are International Traffic in Arms Regulations (ITAR) restricted. The restriction paragraph 
+published with each topic applies, including disclosure of any proposed use of foreign nationals. 
+SBIR data rights attach to technical data and computer software developed under an award. Proposers 
+shall mark proprietary material in accordance with the DoW SBIR Program BAA and shall assert any 
+restricted or limited rights in the proposal rather than after award. 
+ADDITIONAL INFORMATION 
+Proposers are responsible for obtaining and accounting for the test authorities, range access, spectrum 
+authorization, threat surrogates, equipment, facilities, and other resources necessary to execute the 
+proposed effort. These requirements must be reflected in the proposed schedule and cost. 
+Authority to mitigate or defeat unmanned aircraft in the United States is limited by statute to covered 
+Federal entities. Proposers shall not assume that an award under either topic provides authority to mitigate 
+or defeat unmanned aircraft, or guarantees access to Government ranges, spectrum, threat surrogates, test 
+resources, or facilities. Where practicable, the Government may assist awardees in arranging range 
+access, threat surrogates, or spectrum authorization. No such Government support is committed or 
+guaranteed by this announcement. 
+ 
+ 
+OSW/DRPMUxS -9 
+The Government may host a capability showcase approximately six months after award. Attendance is by 
+invitation and is based on end-user interest in the capability. It is not required of every performer. 
+Performers shall provide operational evidence supporting a follow-on funding decision whether or not 
+they are invited. 
+ 
+  
+ 
+OSW/DRPMUxS -10 
+DRPMUxS SBIR DOW 2027 BAA 
+Topic Index 
+Release 1 
+ 
+ 
+OSW27BZ01-NV001  Counter-Unmanned Aerial Systems Rapid Maturation 
+ 
+OSW27BZ01-DV002  Counter-Unmanned Aerial Systems Rapid Maturation  
+ 
+OSW/DRPMUxS -11 
+OSW27BZ01-NV001 TITLE: Counter-Unmanned Aerial Systems Rapid Maturation 
+ 
+OUSW (R&E) CRITICAL TECHNOLOGY AREA(S): Applied Artificial Intelligence 
+ 
+COMPONENT TECHNOLOGY PRIORITY AREA(S): Trusted AI and Autonomy; Integrated Sensing 
+and Cyber; Integrated Network Systems-of-Systems; Advanced Infrastructure & Advanced 
+Manufacturing 
+ 
+PROJECTED CMMC LEVEL REQUIREMENT: Level 2 (Self) 
+ 
+The technology within this topic is restricted under the International Traffic in Arms Regulation (ITAR), 
+22 CFR Parts 120-130, which controls the export and import of defense-related material and services, 
+including export of sensitive technical data, or the Export Administration Regulation (EAR), 15 CFR 
+Parts 730-774, which controls dual use items. Offerors must disclose any proposed use of foreign 
+nationals (FNs), their country(ies) of origin, the type of visa or work permit possessed, and the statement 
+of work (SOW) tasks intended for accomplishment by the FN(s) in accordance with the Announcement. 
+Offerors are advised foreign nationals proposed to perform on this topic may be restricted due to the 
+technical data under US Export Control Laws.  
+ 
+OBJECTIVE: Mature commercial and dual-use technologies that detect, track, identify, or defeat small 
+low-flying drones (Group 1 and Group 2 unmanned aerial systems) in hostile or contested areas. 
+ 
+DESCRIPTION: Inexpensive, highly maneuverable, commercially available unmanned aerial systems 
+(UAS) threaten tactical forces, critical infrastructure, and installations. Current defenses are limited by 
+cost, by the operator attention they require, and by their vulnerability to countermeasures. A capability 
+gap against Group 1 and Group 2 UAS remains. 
+ 
+This topic seeks mature or maturing technology at any point in the counter-UAS kill chain. The three 
+areas below are where capability is most needed. They are examples. A proposal may address one area, 
+more than one, or a gap not listed here. 
+ 
+Detection and Tracking. Detect and hold track on highly agile targets in cluttered low-altitude airspace. 
+The proposer selects the sensing modality. Approaches that hold track when the target is not emitting are 
+preferred. Solutions that require permanent site infrastructure or mains power, including fixed perimeter 
+sensor installations, are out of scope for this area. The system must move with the force. 
+ 
+Identification and Decision Support. Classify and identify unauthorized platforms and support an 
+engagement decision. Processing must run on tactical computing hardware carried or emplaced with the 
+force. Proposals should describe a pathway to interoperate with existing command and control. 
+Conformance to a named standard is not required at this stage and will not be scored. 
+ 
+Mitigation and Defeat. Kinetic, non-kinetic, or cyber approaches that defeat hostile UAS in remote 
+tactical theaters and in densely populated areas. Proposals must address collateral effects. 
+Operating preferences. The operating environment is denied, contested, and unattended. The four 
+conditions below are preferences, not eligibility requirements.  
+ 
+Every proposal must state where it stands against each one. 
+(a) The system does not require the target to emit radio frequency (RF) energy. Passive RF may be part of 
+a solution; the preference is that track holds when the target is silent. 
+(b) The system does not radiate. The Government favors kinetic and cyber defeat over approaches that 
+require the friendly system to emit. Jamming, active illumination, and transmission into a target's control 
+ 
+OSW/DRPMUxS -12 
+or navigation link are in scope. A proposal that uses any of them must say so and describe the operational 
+effect. 
+(c) The system does not require cloud services or reachback. Training and analytics may occur off-
+platform. The processing that produces the operational output should run on the platform, and the system 
+should continue to function with all external network interfaces disabled. 
+(d) The system does not require a dedicated operator, meaning no person whose only task is attending it. 
+Human judgment over the use of force is expected and is not addressed by this preference. 
+ 
+Out of scope: work requiring classified access or a facility clearance at the time of award, and approaches 
+that depend on cooperative identification, including Remote ID broadcast. 
+ 
+PHASE I: Phase I shall determine the technical, scientific, and commercial feasibility of the proposed 
+approach. Work may include developing a concept architecture, modeling critical software components, 
+or bench testing key hardware elements. Phase I deliverables are a feasibility study, a technical report, 
+and an initial system design package showing the path to a prototype. 
+ 
+The technical report shall state the conditions, dates, and target or threat surrogate used in any testing 
+performed, and the measured result. It shall also state where the approach stands against each of the four 
+operating preferences. 
+ 
+As required by the DoW solicitation, the feasibility documented may not rest solely upon, or logically 
+extend from, prior or ongoing federally funded SBIR or STTR work; the proposing firm and/or the 
+principal investigator must have substantially performed the work relied upon; and the firm must 
+demonstrate ownership or licensure of the associated intellectual property prior to proposal submission. 
+ 
+PHASE II: Phase II follow-on depends on the availability of future-year funds and will be considered 
+among the Phase I awardees under this topic. 
+ 
+Phase II is a major research and development effort. Performers refine the Phase I concept into an 
+operational prototype that demonstrates real-world functionality. The primary deliverable is a functional 
+system, software package, or physical prototype ready for test and evaluation in a militarily relevant or 
+simulated field environment. The technology shall reach TRL 6 by the end of Phase II. 
+ 
+The period of performance is twelve months rather than the twenty-four the announcement allows. The 
+intent is to move a demonstrated capability to a transition decision within one year. Proposals should be 
+scoped to that schedule. 
+ 
+The Government may host a showcase about six months after award. Attendance is by invitation and is 
+based on end user interest in the capability. It is not required of every performer. Performers shall provide 
+operational evidence supporting a follow-on funding decision whether or not they are invited. 
+ 
+PHASE III DUAL USE APPLICATIONS: Commercial applications are those in which the equipment 
+deploys with a team rather than being installed at a site: temporary airspace security for outdoor events, 
+venues, and construction or energy sites; convoy, executive, and site-survey protection; wildfire, disaster, 
+and critical infrastructure response; and mobile detection kits for law enforcement and allied partners. 
+Detection, tracking, and identification technologies have a direct commercial market in these roles. 
+Authority to mitigate or defeat unmanned aircraft in the United States is limited by statute to covered 
+federal entities. A defeat-focused proposal is not expected to show a near-term domestic commercial 
+market for that function. 
+ 
+ 
+OSW/DRPMUxS -13 
+Military applications include integration into point-defense systems for tactical units, forward operating 
+bases, and naval vessel protection platforms, which may be funded via non-SBIR/STTR acquisition 
+budgets. 
+ 
+REFERENCES: 
+1. Congressional Research Service. Department of Defense Counter Unmanned Aircraft Systems: 
+Background and Issues for Congress. Report R48477. https://www.congress.gov/crs-
+product/R48477 
+2. Statement of General Michael E. Kurilla, Commander, U.S. Central Command, before the Senate 
+Armed Services Committee on the posture of U.S. Central Command, 10 June 2025. 
+3. U.S. Department of Defense Counter-Small Unmanned Aircraft Systems Strategy (2021). 
+https://media.defense.gov/2021/Jan/07/2002561080/-1/-1/1/DEPARTMENT-OF-DEFENSE-
+COUNTER-SMALL-UNMANNED-AIRCRAFT-SYSTEMS-STRATEGY.PDF 
+ 
+KEYWORDS: Counter-UAS; C-sUAS; Group 1 UAS; Group 2 UAS; autonomous threat detection; edge 
+artificial intelligence; multi-sensor fusion; denied environment 
+ 
+ 
+ 
+ 
+OSW/DRPMUxS -14 
+OSW27BZ01-DV002 TITLE: Counter-Unmanned Aerial Systems Rapid Maturation 
+ 
+OUSW (R&E) CRITICAL TECHNOLOGY AREA(S): Applied Artificial Intelligence 
+ 
+COMPONENT TECHNOLOGY PRIORITY AREA(S): Trusted AI and Autonomy; Integrated Sensing 
+and Cyber; Integrated Network Systems-of-Systems; Advanced Infrastructure & Advanced 
+Manufacturing 
+ 
+PROJECTED CMMC LEVEL REQUIREMENT: Level 2 (Self) 
+ 
+The technology within this topic is restricted under the International Traffic in Arms Regulation (ITAR), 
+22 CFR Parts 120-130, which controls the export and import of defense-related material and services, 
+including export of sensitive technical data, or the Export Administration Regulation (EAR), 15 CFR 
+Parts 730-774, which controls dual use items. Offerors must disclose any proposed use of foreign 
+nationals (FNs), their country(ies) of origin, the type of visa or work permit possessed, and the statement 
+of work (SOW) tasks intended for accomplishment by the FN(s) in accordance with the Announcement. 
+Offerors are advised foreign nationals proposed to perform on this topic may be restricted due to the 
+technical data under US Export Control Laws.  
+ 
+OBJECTIVE: Mature commercial and dual-use technologies that detect, track, identify, or defeat small 
+low-flying drones (Group 1 and Group 2 unmanned aerial systems) in hostile or contested areas. 
+ 
+DESCRIPTION: Inexpensive, highly maneuverable, commercially available unmanned aerial systems 
+(UAS) threaten tactical forces, critical infrastructure, and installations. Current defenses are limited by 
+cost, by the operator attention they require, and by their vulnerability to countermeasures. A capability 
+gap against Group 1 and Group 2 UAS remains. 
+ 
+This topic seeks mature or maturing technology at any point in the counter-UAS kill chain. The three 
+areas below are where capability is most needed. They are examples. A proposal may address one area, 
+more than one, or a gap not listed here. 
+ 
+Detection and Tracking. Detect and hold track on highly agile targets in cluttered low-altitude airspace. 
+The proposer selects the sensing modality. Approaches that hold track when the target is not emitting are 
+preferred. Solutions that require permanent site infrastructure or mains power, including fixed perimeter 
+sensor installations, are out of scope for this area. The system must move with the force. 
+Identification and Decision Support. Classify and identify unauthorized platforms and support an 
+engagement decision. Processing must run on tactical computing hardware carried or emplaced with the 
+force. Proposals should describe a pathway to interoperate with existing command and control. 
+Conformance to a named standard is not required at this stage and will not be scored. 
+ 
+Mitigation and Defeat. Kinetic, non-kinetic, or cyber approaches that defeat hostile UAS in remote 
+tactical theaters and in densely populated areas. Proposals must address collateral effects. 
+Operating preferences. The operating environment is denied, contested, and unattended. The four 
+conditions below are preferences, not eligibility requirements.  
+ 
+Every proposal must state where it stands against each one. 
+(a) The system does not require the target to emit radio frequency (RF) energy. Passive RF may be part of 
+a solution; the preference is that track holds when the target is silent. 
+(b) The system does not radiate. The Government favors kinetic and cyber defeat over approaches that 
+require the friendly system to emit. Jamming, active illumination, and transmission into a target's control 
+ 
+OSW/DRPMUxS -15 
+or navigation link are in scope. A proposal that uses any of them must say so and describe the operational 
+effect. 
+(c) The system does not require cloud services or reachback. Training and analytics may occur off-
+platform. The processing that produces the operational output should run on the platform, and the system 
+should continue to function with all external network interfaces disabled. 
+(d) The system does not require a dedicated operator, meaning no person whose only task is attending it. 
+Human judgment over the use of force is expected and is not addressed by this preference. 
+Out of scope: work requiring classified access or a facility clearance at the time of award, and approaches 
+that depend on cooperative identification, including Remote ID broadcast. 
+ 
+PHASE I: This topic solicits Direct-to-Phase-II (DP2) proposals only. Direct to Phase II proposers shall 
+submit documentation showing that Phase I-equivalent feasibility has already been achieved outside the 
+SBIR/STTR program. Adequate documentation is a written record of at least one test of the proposed 
+approach stating the conditions under which the test was conducted, the dates, the target, threat, or 
+surrogate used, the measured result, and how it was measured.Test data, technical reports, and third-party 
+evaluation metrics are acceptable. A system design alone is not sufficient. A self-declared technology 
+readiness level unsupported by a documented test is not sufficient. 
+ 
+As required by the DoW solicitation, the feasibility documented may not rest solely upon, or logically 
+extend from, prior or ongoing federally funded SBIR or STTR work; the proposing firm and/or the 
+principal investigator must have substantially performed the work relied upon; and the firm must 
+demonstrate ownership or licensure of the associated intellectual property prior to proposal submission. 
+ 
+PHASE II: Phase II is a major research and development effort. Performers refine the Phase I concept into 
+an operational prototype that demonstrates real-world functionality. The primary deliverable is a 
+functional system, software package, or physical prototype ready for test and evaluation in a militarily 
+relevant or simulated field environment. The technology shall reach TRL 6 by the end of Phase II. 
+The period of performance is twelve months rather than the twenty-four the announcement allows. The 
+intent is to move a demonstrated capability to a transition decision within one year. Proposals should be 
+scoped to that schedule. 
+ 
+The Government may host a showcase about six months after award. Attendance is by invitation and is 
+based on end user interest in the capability. It is not required of every performer. Performers shall provide 
+operational evidence supporting a follow-on funding decision whether or not they are invited. 
+ 
+PHASE III DUAL USE APPLICATIONS: Commercial applications are those in which the equipment 
+deploys with a team rather than being installed at a site: temporary airspace security for outdoor events, 
+venues, and construction or energy sites; convoy, executive, and site-survey protection; wildfire, disaster, 
+and critical infrastructure response; and mobile detection kits for law enforcement and allied partners. 
+Detection, tracking, and identification technologies have a direct commercial market in these roles. 
+Authority to mitigate or defeat unmanned aircraft in the United States is limited by statute to covered 
+federal entities. A defeat-focused proposal is not expected to show a near-term domestic commercial 
+market for that function. 
+ 
+Military applications include integration into point-defense systems for tactical units, forward operating 
+bases, and naval vessel protection platforms, which may be funded via non-SBIR/STTR acquisition 
+budgets. 
+ 
+ 
+ 
+ 
+ 
+OSW/DRPMUxS -16 
+REFERENCES: 
+1. Congressional Research Service. Department of Defense Counter Unmanned Aircraft Systems: 
+Background and Issues for Congress. Report R48477. https://www.congress.gov/crs-
+product/R48477 
+2. Statement of General Michael E. Kurilla, Commander, U.S. Central Command, before the Senate 
+Armed Services Committee on the posture of U.S. Central Command, 10 June 2025. 
+3. U.S. Department of Defense Counter-Small Unmanned Aircraft Systems Strategy (2021). 
+https://media.defense.gov/2021/Jan/07/2002561080/-1/-1/1/DEPARTMENT-OF-DEFENSE-
+COUNTER-SMALL-UNMANNED-AIRCRAFT-SYSTEMS-STRATEGY.PDF 
+ 
+KEYWORDS: Counter-UAS; C-sUAS; Group 1 UAS; Group 2 UAS; autonomous threat detection; edge 
+artificial intelligence; multi-sensor fusion; denied environment 
+ 
+ 
+ 
+ 

@@ -113,6 +113,7 @@ class App:
         self.exit_code: int | None = None
         self.finished = False
         self._indeterminate = False
+        self._phase_label = ""
         self.on_finished = None  # optional callback for tests
         self._chrome_collapsed = False
         self._selected_row: dict | None = None
@@ -375,6 +376,8 @@ class App:
             "trl",
             "funding",
             "contract",
+            "techVolLimit",
+            "feasStudyLimit",
             "pdf",
         )
         self._columns = columns
@@ -397,6 +400,8 @@ class App:
             "trl": ("TRL", 45),
             "funding": ("Funding", 80),
             "contract": ("Contract", 110),
+            "techVolLimit": ("Tech Vol Page Limit", 110),
+            "feasStudyLimit": ("Feasibility Study Page Limit", 130),
             "pdf": ("PDF", 180),
         }
         for key, (label, width) in headings.items():
@@ -684,6 +689,7 @@ class App:
                 self._append_log(event[1])
         elif kind == "start_phase":
             _, label, total = event
+            self._phase_label = label
             self.progress.stop()  # stop() zeroes the value; we set it below
             self._indeterminate = False
             self.progress.configure(mode="determinate", maximum=max(1, total), value=0)
@@ -696,7 +702,8 @@ class App:
             if info["failure"]:
                 self._append_log(info["failure"])
         elif kind == "end_phase":
-            pass
+            if getattr(self, "_phase_label", "") == "solicitation PDF":
+                self._refresh_all_page_limits()
         elif kind == "catalog_ready":
             self._apply_catalog(event[1])
         elif kind == "item_done":
@@ -706,7 +713,9 @@ class App:
 
     def _apply_catalog(self, topics: list[dict]) -> None:
         self._topics_for_diff = list(topics)
-        self._bluf_rows = [analyze.bluf_row(topic, None) for topic in topics]
+        self._bluf_rows = [
+            analyze.bluf_row(topic, self.output_dir) for topic in topics
+        ]
         for row, topic in zip(self._bluf_rows, self._topics_for_diff):
             row["pdf"] = topic.get("pdf") or ""
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
@@ -744,6 +753,15 @@ class App:
         self._render_table()
         self._rebind_selected()
         self._refresh_caption(pending=True)
+
+    def _refresh_all_page_limits(self) -> None:
+        """Fill tech-vol / feasibility cells from instruction PDFs already on disk."""
+        if self.output_dir is None:
+            return
+        for row in self._bluf_rows:
+            analyze.refresh_volume_page_limits(row, self.output_dir)
+        self._render_table()
+        self._rebind_selected()
 
     def _on_finished(self, code: int) -> None:
         self.exit_code = code
@@ -1018,6 +1036,7 @@ class App:
         self._topics_for_diff = payload.get("topics") or []
         for row in self._bluf_rows:
             analyze.refresh_due_in(row)
+            analyze.refresh_volume_page_limits(row, self.output_dir)
             self._stamp_triage(row)
         self._fill_tech_areas()
         self._render_table()
@@ -1161,6 +1180,13 @@ class App:
     @staticmethod
     def _sort_key(row: dict, column: str) -> tuple:
         val = str(row.get(column) or "")
+        if column in {"techVolLimit", "feasStudyLimit"}:
+            if val.lower().startswith("n/a"):
+                return (2, 0, val.lower())
+            digits = "".join(ch for ch in val if ch.isdigit())
+            if digits:
+                return (0, int(digits[:2]), val.lower())
+            return (3, 0, val.lower())
         if column == "dueIn":
             if val == "today":
                 return (0, 0, "")
@@ -1174,6 +1200,8 @@ class App:
     def _cell(self, row: dict, column: str) -> str:
         if column == "call":
             return analyze.triage_label(row.get("call"))
+        if column in {"techVolLimit", "feasStudyLimit"}:
+            return str(row.get(column) or "")
         return str(row.get(column) or "—")
 
     def _render_table(self) -> None:
@@ -1303,6 +1331,7 @@ class App:
             path = analyze.resolve_pdf(self.output_dir, pdf_name)
             if path is not None:
                 pdf_text = analyze.extract_pdf_text(path)
+        analyze.refresh_volume_page_limits(row, self.output_dir, topic_text=pdf_text)
         overview = analyze.topic_overview_paragraph(row, pdf_text=pdf_text, details=details)
         row["overviewParagraph"] = overview
         problem = str(row.get("problem") or row.get("overview") or "").strip()
@@ -1319,6 +1348,7 @@ class App:
                 f"Client: {row.get('client') or '—'}",
                 f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
                 f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
+                f"Tech vol page limit: {row.get('techVolLimit') or ''}    Feasibility study page limit: {row.get('feasStudyLimit') or ''}",
                 f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
                 f"Call: {call}",
                 f"CMMC: {row.get('cmmc') or '—'}    ITAR: {itar}",
