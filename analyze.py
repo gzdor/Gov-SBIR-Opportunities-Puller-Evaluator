@@ -12,6 +12,8 @@ import json
 import math
 import os
 import re
+import subprocess
+import sys
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
@@ -423,6 +425,61 @@ def days_until(iso: str | None) -> str:
     return f"{delta}d"
 
 
+def pypdf_available() -> bool:
+    try:
+        import pypdf  # noqa: F401
+
+        return True
+    except ImportError:
+        try:
+            import PyPDF2  # noqa: F401
+
+            return True
+        except ImportError:
+            return False
+
+
+def ensure_pypdf(install: bool = False) -> bool:
+    """Return True if a PDF text backend is importable.
+
+    The GUI runs as `python gui.py` from whichever interpreter is on PATH.
+    That is often conda `base`, which does not have pypdf even when the
+    dsip-opportunities env does. Optional install uses that same interpreter.
+    """
+    if pypdf_available():
+        return True
+    if not install:
+        return False
+    try:
+        subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--disable-pip-version-check",
+                "pypdf",
+            ],
+            check=True,
+            capture_output=True,
+            timeout=120,
+        )
+    except Exception:
+        return False
+    return pypdf_available()
+
+
+def _pdf_reader_class():
+    try:
+        from pypdf import PdfReader
+
+        return PdfReader
+    except ImportError:
+        from PyPDF2 import PdfReader
+
+        return PdfReader
+
+
 def extract_pdf_text(
     path: Path,
     max_bytes: int | None = None,
@@ -437,7 +494,8 @@ def extract_pdf_text(
         stat = path.stat()
         if stat.st_size > limit_bytes:
             return ""
-        from pypdf import PdfReader  # optional; GUI still works without it
+        if not pypdf_available():
+            return ""
     except Exception:
         return ""
     try:
@@ -457,9 +515,7 @@ def _extract_pdf_text_cached(
     resolved: str, size: int, mtime: int, max_bytes: int, max_pages: int
 ) -> str:
     del size, mtime, max_bytes  # identity for cache invalidation only
-    from pypdf import PdfReader
-
-    reader = PdfReader(resolved, strict=False)
+    reader = _pdf_reader_class()(resolved, strict=False)
     chunks = [page.extract_text() or "" for page in reader.pages[:max_pages]]
     return "\n".join(chunks)
 

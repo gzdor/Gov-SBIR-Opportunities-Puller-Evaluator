@@ -159,6 +159,7 @@ class App:
         self.table_filter_var.trace_add("write", lambda *_: self._on_filter_change())
         self.call_filter_var.trace_add("write", lambda *_: self._on_filter_change())
         self.tech_area_var.trace_add("write", lambda *_: self._on_filter_change())
+        self._ensure_pdf_backend()
         self._restore_state()
 
     # ---- UI construction -------------------------------------------------
@@ -920,6 +921,19 @@ class App:
         self._save_state()
         return True
 
+    def _ensure_pdf_backend(self) -> None:
+        """Page limits come from instruction PDFs; conda base often lacks pypdf."""
+        if analyze.pypdf_available():
+            return
+        if analyze.ensure_pypdf(install=True):
+            self._append_log("Installed pypdf so Tech Vol / Feasibility page limits can be read.")
+            return
+        self._append_log(
+            "pypdf is not installed in this Python. "
+            "Tech Vol and Feasibility page limits stay blank. "
+            f"Fix: {sys.executable} -m pip install pypdf"
+        )
+
     def _restore_state(self) -> None:
         try:
             payload = json.loads(STATE_FILE.read_text(encoding="utf-8"))
@@ -1038,6 +1052,10 @@ class App:
             analyze.refresh_due_in(row)
             analyze.refresh_volume_page_limits(row, self.output_dir)
             self._stamp_triage(row)
+        stated = sum(1 for row in self._bluf_rows if row.get("techVolLimit"))
+        self._append_log(
+            f"Page limits from instruction PDFs: {stated}/{len(self._bluf_rows)} topics stated."
+        )
         self._fill_tech_areas()
         self._render_table()
         if selected_key:

@@ -10,6 +10,11 @@ _OSW_INSTRUCTIONS = _FIXTURES / "OSW-DRPM_SBIR_27BZ_R1.txt"
 _OSW_INSTRUCTIONS_PDF = _FIXTURES / "OSW-DRPM_SBIR_27BZ_R1.pdf"
 
 
+def test_pypdf_backend_is_importable():
+    assert analyze.pypdf_available() is True
+    assert analyze.ensure_pypdf(install=False) is True
+
+
 def test_empty_phrase_keeps_every_topic():
     topics = [
         {"topicCode": "A", "topicTitle": "Laser", "component": "NAVY"},
