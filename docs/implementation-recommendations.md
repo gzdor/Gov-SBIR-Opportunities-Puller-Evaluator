@@ -52,6 +52,16 @@ Topic overview
 - Publish an unsigned `.exe` on GitHub Releases.
 - Add DSIP login, “ask a question,” or a CRM pipeline.
 
+Page limits (2026-11-03)
+
+- Tech Vol / Feasibility Study columns from component instruction PDFs.
+  OSD/DRPM UxS D2P2 `OSW27BZ01-DV002` is 5 (stated) / 5 (stated). Silent BAAs
+  stay blank (no typical 15). [ADR 011](design-decisions/011-volume-page-limits.md).
+- GUI recomputes on solicitation-PDF end and snapshot load. `pypdf` is
+  installed into the running interpreter if missing.
+- Non-technical Windows 11 path (Store Python, no Git, no admin):
+  [WINDOWS_11_NO_ADMIN_README.md](WINDOWS_11_NO_ADMIN_README.md).
+
 ## Later (only if named)
 
 - Official opt-in clients from [ADR 005](design-decisions/005-multi-source-modes.md)

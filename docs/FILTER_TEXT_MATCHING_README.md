@@ -7,6 +7,8 @@ or use **Find in snapshot** (Ctrl+F).
 This is the user-facing companion to
 [ADR 001](design-decisions/001-search-aliases.md). Architecture overview:
 [CURRENT_ARCHITECTURE_README.md](../CURRENT_ARCHITECTURE_README.md).
+Page-limit columns (not part of the text filter):
+[PAGE_LIMIT_EXTRACTION_README.md](PAGE_LIMIT_EXTRACTION_README.md).
 
 **The phrase never leaves the machine.** It is not sent as DSIP `searchText`.
 There is no cloud model and no regex compiled from what you type.

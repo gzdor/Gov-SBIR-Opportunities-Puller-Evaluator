@@ -17,6 +17,7 @@ review** that had to fail before the code landed.
 | [008](008-how-sbir-works-tab.md) | Offline How-SBIR-works tab; no consultant reprint or scrape |
 | [009](009-hygiene-and-donext.md) | Hygiene + Do Next sprint: details, overview, persist, calendar |
 | [010](010-optional-local-llms.md) | Future opt-in local Ollama/llama.cpp for snapshot text; no cloud/HF |
+| [011](011-volume-page-limits.md) | Extractive tech-vol / feasibility page limits; blank if unstated |
 
 Do **not** use these notes as permission to: publish an unsigned `.exe`, send
 filter text to DSIP `searchText`, call a cloud LLM or pull HuggingFace

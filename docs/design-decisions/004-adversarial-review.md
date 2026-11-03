@@ -70,6 +70,18 @@ Objections that changed the design are marked **fixed**.
 | A66 | Remote Ollama host | **Rejected** | localhost only if ever landed |
 | A67 | LLM as keep/drop instead of aliases | **Rejected** | [001](001-search-aliases.md) stays |
 | A68 | Details `objective` is ITAR-first so overview echoed the title | **Fixed** | Strip ITAR; prefer details + PDF sentences |
+| A69 | Typical D2P2 15-page fill on OSD/DRPM UxS DV002 (true cap is 5) | **Fixed** | [011](011-volume-page-limits.md); no typical page fill |
+| A70 | OSD writes `five (5) pages`; digit-only regex missed | **Fixed** | Word + `(5)` + digits |
+| A71 | Same instruction PDF: NV001 2-page Phase I vs DV002 5-page D2P2 | **Fixed** | Topic-code / D2P2 heading scope |
+| A72 | Concatenate every `solicitation_documents/*.pdf` | **Fixed** | Named files + component filename hints |
+| A73 | `manifest.json` bluf cache keeps empty page-limit strings | **Fixed** | Recompute on snapshot load and after solicitation PDFs |
+| A74 | `python gui.py` from conda `base` has no `pypdf` → all cells blank | **Fixed** | `ensure_pypdf(install=True)` at GUI start |
+| A75 | First-launch `pip install pypdf` is extra supply chain | **Accepted** | Same pin as `requirements.txt`; no other package |
+| A76 | Narrow columns truncate “Tech Vol Page Limit” so the field looks unused | **Fixed** | Wider column min width |
+| A77 | Army CSO / silent BAAs look “broken” when blank | **Accepted** | Blank means unstated, not typical 15 |
+| A78 | Fill typicals so the table is never empty | **Rejected** | User forbade typical page fill |
+| A79 | Cloud/local LLM “read the BAA” for page caps | **Rejected** | Extractive only |
+| A80 | Public unsigned `.exe` as the non-technical install path | **Rejected** | Store Python + ZIP; see `docs/WINDOWS_11_NO_ADMIN_README.md` |
 
 ## Architecture of the review loop
 
@@ -94,9 +106,14 @@ flowchart TB
   match until the glossary or tagging grows.
 - No email watch; the user re-runs the app.
 - Unsigned local builds still trip SmartScreen.
+- Page-limit cells are blank when `pypdf` is missing, the instruction PDF is
+  image-only, or the BAA never states a number. That is intended, not a
+  typical 15-page fill. `manifest.json` may still store empty strings until
+  a GUI load with `pypdf` recomputes them.
 
 ## Consequences
 
 `test/test_aliases.py` encodes A1–A5. `test/test_gui.py` encodes dark theme +
-table Find. Future features add a row to this table or a new ADR, not a silent
-README sentence.
+table Find. `test/test_analyze.py` encodes A69–A73 (OSD DV002 5/5, NV001 2,
+silent blank). Future features add a row to this table or a new ADR, not a
+silent README sentence. Page limits: [011](011-volume-page-limits.md).

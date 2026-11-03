@@ -12,6 +12,13 @@ DSIP as `searchText`. There is no cloud AI and no login.
 Architecture diagrams and design notes:
 [CURRENT_ARCHITECTURE_README.md](CURRENT_ARCHITECTURE_README.md).
 
+**Not a developer?** Windows 11, no Git, no admin password:
+[docs/WINDOWS_11_NO_ADMIN_README.md](docs/WINDOWS_11_NO_ADMIN_README.md)
+(Microsoft Store Python + Download ZIP, then double-click `run-gui.bat`).
+
+How page-limit columns are filled:
+[docs/PAGE_LIMIT_EXTRACTION_README.md](docs/PAGE_LIMIT_EXTRACTION_README.md).
+
 ## Run it (Windows, from source)
 
 You need **Python 3.14** in the `dsip-opportunities` conda environment.
@@ -99,8 +106,10 @@ all_dsip_opportunities_YYYYMMDD_HHMMSS/
 - **qa/** — published Topic Q&A (read-only; asking still needs a DSIP login).
 - **details/** — keywords, technology areas, ITAR, objective.
 
-Optional `pypdf` (`pip install pypdf`) fills TRL / funding / the overview
-paragraph from the local PDF. Without it, catalog columns still work.
+`pypdf` (`pip install pypdf`) fills TRL, funding, the overview paragraph, and
+the **Tech Vol** / **Feasibility Study** page-limit columns from local PDFs.
+Without it, catalog columns still work; page-limit cells stay blank. The GUI
+will install `pypdf` into the Python that launched `gui.py` if it is missing.
 
 ## Build the Windows `.exe` yourself
 

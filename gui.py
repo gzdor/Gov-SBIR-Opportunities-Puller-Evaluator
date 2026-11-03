@@ -401,14 +401,15 @@ class App:
             "trl": ("TRL", 45),
             "funding": ("Funding", 80),
             "contract": ("Contract", 110),
-            "techVolLimit": ("Tech Vol Page Limit", 110),
-            "feasStudyLimit": ("Feasibility Study Page Limit", 130),
+            "techVolLimit": ("Tech Vol Page Limit", 150),
+            "feasStudyLimit": ("Feasibility Study Page Limit", 180),
             "pdf": ("PDF", 180),
         }
         for key, (label, width) in headings.items():
             self.table.heading(key, text=label, command=lambda c=key: self._sort_by(c))
             stretch = key in {"title", "problem"}
-            self.table.column(key, width=width, minwidth=40, stretch=stretch)
+            min_w = 120 if key in {"techVolLimit", "feasStudyLimit"} else 40
+            self.table.column(key, width=width, minwidth=min_w, stretch=stretch)
         self.table.tag_configure("closing", foreground=theme.WARN)
         self.table.tag_configure("soon", foreground=theme.SOON)
         self.table.tag_configure("closed", foreground=theme.CLOSED)

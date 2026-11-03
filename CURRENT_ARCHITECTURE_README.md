@@ -2,7 +2,8 @@
 
 Diagrams, data paths, and design notes for
 [Gov-SBIR-Opportunities-Puller-Evaluator](README.md). Start with the README
-if you only need to run the tool.
+if you only need to run the tool. Windows 11 without Git or admin:
+[docs/WINDOWS_11_NO_ADMIN_README.md](docs/WINDOWS_11_NO_ADMIN_README.md).
 
 This is a **local DSIP open-topics appliance**. Polar = snapshot depth.
 Evaluator = no CRM, no third-party OAuth, no cloud LLM, no public unsigned
@@ -83,8 +84,8 @@ sequenceDiagram
     G->>G: fill BLUF table
     par PDFs
         M->>API: topic + solicitation PDFs
-        M-->>G: item_done
-        G->>G: refresh row, keep selection and yview
+        M-->>G: item_done / end_phase
+        G->>G: page limits from instruction PDFs; keep selection and yview
     end
     M->>API: published Q and A + details
     M->>FS: manifest.json, qa/, details/
@@ -153,8 +154,13 @@ Q&A and details are best-effort sequential after PDFs.
   `solicitation_documents/`. The Topic pane **Open instruction PDF** button
   opens the first path listed on that row, still sandboxed by `resolve_pdf`.
   Tech-volume and feasibility-study page limits are extracted from that PDF
-  and shown on the table; if the BAA does not state a number, the cell stays
-  blank.
+  (`N (stated)`). If the BAA does not state a number, the cell stays blank —
+  typical DoW 15/5 page ceilings are never filled in. Combined Phase I +
+  D2P2 instruction books are scoped to this topic. See
+  [PAGE_LIMIT_EXTRACTION_README.md](docs/PAGE_LIMIT_EXTRACTION_README.md)
+  and [ADR 011](docs/design-decisions/011-volume-page-limits.md).
+  `pypdf` is required for those two columns; the GUI will install it into
+  the running interpreter if it is missing.
 
 ## Release cadence (FY27 snapshot)
 
