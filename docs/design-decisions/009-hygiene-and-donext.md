@@ -7,7 +7,7 @@
 
 ## Context
 
-The Polar/Evaluator sprint left a Do Next list (details JSON, New/Changed
+The Discovery sprint left a Do Next list (details JSON, New/Changed
 chips, live due-in, persist chips/Find, instruction PDF, full Q&A, keyboard
 hygiene) and a request for an “AI-generated paragraph” when a table row is
 clicked. A separate question asked whether [navysbir.com](https://www.navysbir.com/)

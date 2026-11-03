@@ -58,7 +58,7 @@ a general chatbot and not a CRM copilot.
 
 The semantic content is already in the details JSON. A local 3B–7B model can
 help *ask* that corpus in English. A cloud model would turn this appliance
-into another HigherGov credit meter and break the Polar/Evaluator split.
+into another HigherGov credit meter and break Discovery's local-only scope.
 
 ## Architecture
 

@@ -1,4 +1,4 @@
-# Gov SBIR Opportunities Puller & Evaluator
+# Gov SBIR Opportunities Discovery
 
 A local desktop tool that downloads the current public
 [DoD SBIR/STTR DSIP open-topics catalog](https://www.dodsbirsttr.mil/topics-app/)
@@ -54,7 +54,7 @@ There is no packaged `.exe` for those platforms.
 5. Click a row. The bottom pane shows an extractive overview of that topic
    PDF, published Q&A, CMMC / ITAR, and actions.
 
-![DSIP Opportunities Puller & Evaluator after a completed run](docs/images/app-window.jpg)
+![DSIP Opportunities Discovery after a completed run](docs/images/app-window.jpg)
 
 Useful keys and chips
 

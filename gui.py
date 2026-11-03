@@ -28,7 +28,7 @@ import main as core
 import sbir_guide
 import theme
 
-APP_TITLE = "DSIP Opportunities — Puller & Evaluator"
+APP_TITLE = "DSIP Opportunities — Discovery"
 # Machine-local only: parent folder, last snapshot path, triage, chips, Find.
 # Never written into a download folder or committed. Do not copy this file
 # between machines expecting shared capture state.

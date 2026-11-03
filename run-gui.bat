@@ -19,7 +19,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Starting Opportunities -- Polar and Evaluator...
+echo Starting Opportunities -- Discovery...
 python gui.py
 if errorlevel 1 (
   echo The app exited with an error.

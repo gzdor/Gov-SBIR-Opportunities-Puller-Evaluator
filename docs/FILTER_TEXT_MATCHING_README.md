@@ -1,6 +1,6 @@
 # GUI filter text matching
 
-How the Polar / Evaluator desktop app decides which topic rows stay visible
+How the Discovery desktop app decides which topic rows stay visible
 when you type in **Download filter**, click **Component** / **Narrow** chips,
 or use **Find in snapshot** (Ctrl+F).
 

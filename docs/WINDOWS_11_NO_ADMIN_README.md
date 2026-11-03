@@ -17,7 +17,7 @@ as malware; this guide uses Microsoft Store Python instead.
 
 ## What you will have when you are done
 
-A window titled **Opportunities — Polar & Evaluator**. You pick a folder
+A window titled **DSIP Opportunities — Discovery**. You pick a folder
 (Downloads is fine), click **Download all opportunities**, and get a table of
 open DoD SBIR/STTR topics plus PDFs on your PC. Nothing you type is sent to
 DSIP as a search box. There is no login.

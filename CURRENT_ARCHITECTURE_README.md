@@ -1,13 +1,13 @@
 # Current architecture
 
 Diagrams, data paths, and design notes for
-[Gov-SBIR-Opportunities-Puller-Evaluator](README.md). Start with the README
+[Gov SBIR Opportunities Discovery](README.md). Start with the README
 if you only need to run the tool. Windows 11 without Git or admin:
 [docs/WINDOWS_11_NO_ADMIN_README.md](docs/WINDOWS_11_NO_ADMIN_README.md).
 
-This is a **local DSIP open-topics appliance**. Polar = snapshot depth.
-Evaluator = no CRM, no third-party OAuth, no cloud LLM, no public unsigned
-`.exe`, no DSIP `searchText`, no scrape of navysbir.com / GovWin / SLED.
+This is a **local DSIP open-topics Discovery appliance**: snapshot depth,
+no CRM, no third-party OAuth, no cloud LLM, no public unsigned `.exe`, no
+DSIP `searchText`, no scrape of navysbir.com / GovWin / SLED.
 
 Decision records live in [`docs/design-decisions/`](docs/design-decisions/).
 

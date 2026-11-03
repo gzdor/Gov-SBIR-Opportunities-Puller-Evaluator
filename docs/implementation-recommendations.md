@@ -1,8 +1,8 @@
 # Implementation recommendations
 
-Working backlog for the local DSIP appliance. Polar = deepen the snapshot.
-Evaluator = no CRM, no login, no public unsigned `.exe`, no `searchText`, no
-cloud LLM, no navysbir/GovWin scrape.
+Working backlog for the local DSIP Discovery appliance: deepen the snapshot;
+no CRM, no login, no public unsigned `.exe`, no `searchText`, no cloud LLM,
+no navysbir/GovWin scrape.
 
 ## Landed (2026-10-30)
 
