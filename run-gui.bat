@@ -19,7 +19,8 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Starting Opportunities -- Discovery...
+echo Starting to Open the GUI...
+echo Opening DSIP GOV Portal Discovery Search Tool ...
 python gui.py
 if errorlevel 1 (
   echo The app exited with an error.
