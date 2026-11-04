@@ -11,6 +11,10 @@ DSIP as `searchText`. There is no cloud AI and no login.
 
 Architecture diagrams and design notes:
 [CURRENT_ARCHITECTURE_README.md](CURRENT_ARCHITECTURE_README.md).
+How the HTTP client talks to DSIP (Chrome UA, cookie warmup, worker cap):
+[docs/DSIP_HTTP.md](docs/DSIP_HTTP.md).
+Agentic-coding packet: [CASE_STUDY.md](CASE_STUDY.md),
+[WALKTHROUGH.md](WALKTHROUGH.md).
 
 **Not a developer?** Windows 11, no Git, no admin password:
 [docs/WINDOWS_11_NO_ADMIN_README.md](docs/WINDOWS_11_NO_ADMIN_README.md)
@@ -80,7 +84,7 @@ only. They are not written into `manifest.json`.
 python main.py
 python main.py --output D:\dsip_pulls\october
 python main.py --query "DAF UAS"
-python main.py --workers 16
+python main.py --workers 8
 ```
 
 The phrase after `--query` is applied locally after the catalog download. A

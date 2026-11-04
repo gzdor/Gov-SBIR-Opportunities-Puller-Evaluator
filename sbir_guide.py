@@ -7,6 +7,8 @@ Air Force/AFWERX explainer is listed under LINKS for further reading.
 
 from __future__ import annotations
 
+import re
+
 # Official first. Third-party last, labeled as unaffiliated.
 LINKS = (
     ("DSIP topics and Topic Q&A", "https://www.dodsbirsttr.mil/topics-app/"),
@@ -161,6 +163,12 @@ SECTIONS: tuple[tuple[str, str], ...] = (
 
 def section_titles() -> tuple[str, ...]:
     return tuple(title for title, _body in SECTIONS)
+
+
+def section_mark(index: int, title: str) -> str:
+    """Stable Text mark for a How-SBIR jump. Index keeps colliding titles unique."""
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", title).strip("_").lower()
+    return f"sec_{index}_{slug[:48]}"
 
 
 def guide_plain_text() -> str:

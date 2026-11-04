@@ -34,16 +34,17 @@ area. It is never written into the download folder and must not be committed.
 ```mermaid
 flowchart TB
     subgraph user[User]
-        GUI["gui.py / DSIP_Downloader.exe"]
+        GUI["gui.py + chrome/table/pane/guide"]
         CLI["python main.py [-o DIR] [-q PHRASE] [-j N]"]
     end
 
     subgraph app[Local process]
         FILTER["analyze.filter_topics<br/>AND-of-OR aliases, never searchText"]
+        HTTP["dsip_http.py Chrome UA + cookie warmup"]
         FETCH["fetch_all_topics + ThreadPool PDFs"]
         EXTRA["save_published_questions + save_topic_details"]
         BLUF["analyze.bluf_row + topic_overview_paragraph"]
-        STATE["STATE_FILE triage / chips / find"]
+        STATE["STATE_FILE atomic JSON triage / chips / find"]
     end
 
     subgraph dsip[DSIP public endpoints]
@@ -57,9 +58,11 @@ flowchart TB
     GUI --> FILTER
     CLI --> FILTER
     FILTER --> FETCH
-    FETCH <--> SEARCH
-    FETCH <--> TPDF
-    FETCH <--> UPLOAD
+    FETCH --> HTTP
+    HTTP <--> SEARCH
+    HTTP <--> TPDF
+    HTTP <--> UPLOAD
+    EXTRA --> HTTP
     EXTRA <--> QA
     EXTRA <--> DET
     FETCH --> BLUF
@@ -73,7 +76,7 @@ flowchart TB
 sequenceDiagram
     actor U as User
     participant G as gui.py
-    participant M as main.py
+    participant M as main.py / dsip_http.py
     participant API as DSIP
     participant FS as Output folder
 
@@ -144,8 +147,11 @@ query path is recorded in
 ## Concurrency
 
 Downloads are network/disk bound. `ThreadPoolExecutor` default is
-`cpu_count * 5`, floored at 4 and capped at 64. Catalog paging is sequential.
-Q&A and details are best-effort sequential after PDFs.
+`cpu_count * 5`, floored at 4 and **capped at 8**. 64 parallel PDF fetches
+were enough for Akamai to 403 the IP. Catalog paging is sequential.
+Q&A and details are best-effort sequential after PDFs. Cookie warmup,
+Chrome User-Agent, and 403 wording live in
+[`dsip_http.py`](dsip_http.py) / [docs/DSIP_HTTP.md](docs/DSIP_HTTP.md).
 
 ## Topic PDF vs solicitation PDF
 
@@ -184,11 +190,17 @@ scrape navysbir.com.
 | 11 | 4 Aug 2027 | 25 Aug 2027 | 22 Sep 2027 |
 | 12 | 1 Sep 2027 | 22 Sep 2027 | 20 Oct 2027 |
 
-## Notebook map
+## Desktop modules
 
-`DSIP_portal_ai_query_tool.ipynb` is the research log that found the public
-search API. `main.py` does not use it. Notebook browser cells need Playwright
-and a key only for the unused chatbot cell.
+`gui.py` owns the window, download thread, and snapshot restore.
+Widget construction is split:
+
+- `chrome.py` — header, pills, pipeline, palette, status
+- `catalog_table.py` — BLUF table, find, sort, CSV, diff
+- `topic_pane.py` — briefing card, triage, notes
+- `guide_tab.py` — How SBIR works
+
+`~/.dsip_downloader_state.json` is written atomically (`state_io.py`).
 
 ## Residual product rules
 

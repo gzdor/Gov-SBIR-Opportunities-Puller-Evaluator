@@ -233,5 +233,6 @@ complete_github_cleanup.ps1
 # Local DSIP downloads (default output of main.py)
 all_dsip_opportunities_*/
 
-# Notebook output folder (default of DSIP_portal_ai_query_tool.ipynb)
+# Research notebook (removed from the product; do not recommit)
+*.ipynb
 notebook_outputs/

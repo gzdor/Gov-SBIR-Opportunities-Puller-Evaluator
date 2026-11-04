@@ -17,6 +17,19 @@ def test_guide_covers_process_without_copying_consultant_marketing():
     assert "Release 2" in text
 
 
+def test_guide_section_marks_are_unique():
+    marks = [
+        sbir_guide.section_mark(index, title)
+        for index, title in enumerate(sbir_guide.section_titles())
+    ]
+    assert marks
+    assert len(marks) == len(set(marks))
+    assert all(mark.startswith("sec_") for mark in marks)
+    assert sbir_guide.section_mark(0, "Same title") != sbir_guide.section_mark(
+        1, "Same title"
+    )
+
+
 def test_guide_section_titles_cover_the_process():
     titles = sbir_guide.section_titles()
     assert "Who can propose" in titles

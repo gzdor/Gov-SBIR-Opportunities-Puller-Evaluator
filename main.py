@@ -15,89 +15,44 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import html
-import http.cookiejar
 import json
 import os
 import re
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
 import analyze
+from dsip_http import (
+    DETAILS_URL,
+    QUESTIONS_URL,
+    SEARCH_PARAM,
+    SEARCH_URL,
+    TOPIC_PDF_URL,
+    UPLOAD_PDF_URL,
+    default_workers,
+    http_error_message as _http_error_message,
+    open_url,
+    public_search_param,
+)
 
 REPO_ROOT = Path(__file__).resolve().parent
-TOPICS_APP_URL = "https://www.dodsbirsttr.mil/topics-app/"
-SEARCH_URL = "https://www.dodsbirsttr.mil/topics/api/public/topics/search"
-TOPIC_PDF_URL = (
-    "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/download/PDF"
-)
-QUESTIONS_URL = (
-    "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/questions"
-)
-DETAILS_URL = (
-    "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/details"
-)
-UPLOAD_PDF_URL = (
-    "https://www.dodsbirsttr.mil/submissions/api/public/download?uploadId={upload_id}"
-)
 
-# Same filter the notebook captured from the DSIP topics app: the open-topics
-# view, which includes pre-release and open solicitations (status ids 591, 592).
-SEARCH_PARAM = {
-    "searchText": None,
-    "components": None,
-    "programYear": None,
-    "solicitationCycleNames": ["openTopics"],
-    "releaseNumbers": [],
-    "topicReleaseStatus": [591, 592],
-    "modernizationPriorities": [],
-    "sortBy": "finalTopicCode,asc",
-    "technologyAreaIds": [],
-    "component": None,
-    "program": None,
-}
+# Same filter the topics app uses: pre-release and open solicitations
+# (status ids 591, 592). HTTP details live in dsip_http.py.
 
 PAGE_SIZE = 100
 MAX_PAGES = 1000
 REQUEST_PAUSE_SECONDS = 0.2
 DOWNLOAD_ATTEMPTS = 3
-RETRYABLE_STATUS = {429, 500, 502, 503, 504}
 TOPIC_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
-HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Referer": "https://www.dodsbirsttr.mil/topics-app/",
-}
-_cookie_jar = http.cookiejar.CookieJar()
-_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookie_jar))
-_session_lock = threading.Lock()
-_session_ready = False
 INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 _print_lock = threading.Lock()
-
-
-def default_workers() -> int:
-    """Pick a thread count that saturates the download without flooding the host.
-
-    Downloads are I/O bound, so more threads than CPUs helps. The count scales
-    with the machine and is capped so a large box does not open an unreasonable
-    number of simultaneous connections to one government server.
-    """
-    cpus = os.cpu_count() or 4
-    # Cap low: 64 parallel PDF fetches is enough for Akamai to 403 this IP.
-    return max(4, min(8, cpus * 5))
 
 
 def log(message: str) -> None:
@@ -368,66 +323,6 @@ def relpath(path: Path, base: Path) -> str:
     return str(path.relative_to(base)).replace("\\", "/")
 
 
-def _ensure_session() -> None:
-    """Load the topics app once so Akamai can issue bot cookies for later API calls."""
-    global _session_ready
-    if _session_ready:
-        return
-    with _session_lock:
-        if _session_ready:
-            return
-        headers = dict(HEADERS)
-        headers["Accept"] = (
-            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
-        )
-        request = urllib.request.Request(TOPICS_APP_URL, headers=headers)
-        try:
-            with _opener.open(request, timeout=30) as response:
-                response.read(4096)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
-            pass
-        _session_ready = True
-
-
-def _http_error_message(exc: urllib.error.HTTPError, url: str) -> str:
-    detail = exc.read(400)
-    exc.close()
-    if exc.code != 403:
-        return f"HTTP {exc.code} for {url}: {detail[:240]!r}"
-    text = html.unescape(detail.decode("utf-8", "replace"))
-    match = re.search(r"Reference\s*#\s*([0-9A-Za-z.]+)", text)
-    ref = match.group(1) if match else ""
-    target = url.split("?", 1)[0]
-    return (
-        f"HTTP 403 from DSIP (Akamai Access Denied) for {target}. "
-        "This is a WAF/bot block, not a login. "
-        f"In a browser on this PC open {TOPICS_APP_URL}. "
-        "If that page also says Access Denied, this network is blocked "
-        "(VPN, too many parallel downloads, or a temporary Akamai ban). "
-        "Wait, try a phone hotspot, then download again."
-        + (f" Akamai reference {ref}." if ref else "")
-    )
-
-
-def open_url(url: str, timeout: int) -> object:
-    _ensure_session()
-    last_error: Exception | None = None
-    for attempt in range(1, 4):
-        try:
-            request = urllib.request.Request(url, headers=HEADERS)
-            return _opener.open(request, timeout=timeout)
-        except urllib.error.HTTPError as exc:
-            last_error = RuntimeError(_http_error_message(exc, url))
-            if exc.code not in RETRYABLE_STATUS or attempt == 3:
-                raise last_error from exc
-        except urllib.error.URLError as exc:
-            last_error = exc
-            if attempt == 3:
-                raise
-        time.sleep(attempt)
-    raise RuntimeError(f"Request failed for {url}") from last_error
-
-
 def fetch_topic_questions(topic_id: str) -> list[dict]:
     """Published Topic Q&A. Public read; asking still requires a DSIP login."""
     if not TOPIC_ID_PATTERN.fullmatch(topic_id or ""):
@@ -517,11 +412,6 @@ def fetch_json(url: str) -> dict:
     if not isinstance(payload, dict):
         raise RuntimeError(f"Expected a JSON object from {url}")
     return payload
-
-
-def public_search_param() -> dict:
-    """Catalog filter sent to DSIP. JSON nulls are omitted; some WAF rules flag them."""
-    return {key: value for key, value in SEARCH_PARAM.items() if value is not None}
 
 
 def search_page(page: int) -> dict:

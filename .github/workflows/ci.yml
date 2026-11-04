@@ -1,0 +1,49 @@
+name: Truth tests
+
+# Pin the contracts that caught agent lies: extractive page limits,
+# no typical fill, honest 403 text, worker cap, restore last manifest,
+# cookie-warmup errors. Full suite after the pins. GUI tests skip when
+# the runner has no display.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  truth:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.14
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install runtime dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Pin extractive page-limit and HTTP contracts
+        run: |
+          python -m pytest -q \
+            test/test_analyze.py::test_osw_dv002_drpm_uxs_page_limits_are_five_and_five \
+            test/test_analyze.py::test_volume_page_limits_blank_when_baa_silent \
+            test/test_analyze.py::test_osw_dv002_still_five_when_preface_says_fifteen \
+            test/test_analyze.py::test_refresh_overwrites_cached_typical_with_osw_pdf \
+            test/test_main.py::test_http_403_message_explains_akamai_block \
+            test/test_main.py::test_default_workers_is_bounded \
+            test/test_main.py::test_search_page_asks_for_one_hundred_records \
+            test/test_dsip_http.py \
+            test/test_state_io.py \
+            test/test_sbir_guide.py::test_guide_section_marks_are_unique
+
+      - name: Full unit suite
+        run: python -m pytest -q
