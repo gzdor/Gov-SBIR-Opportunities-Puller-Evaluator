@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import html
+import http.cookiejar
 import json
 import os
 import re
@@ -31,6 +33,7 @@ from urllib.parse import urlencode
 import analyze
 
 REPO_ROOT = Path(__file__).resolve().parent
+TOPICS_APP_URL = "https://www.dodsbirsttr.mil/topics-app/"
 SEARCH_URL = "https://www.dodsbirsttr.mil/topics/api/public/topics/search"
 TOPIC_PDF_URL = (
     "https://www.dodsbirsttr.mil/topics/api/public/topics/{topic_id}/download/PDF"
@@ -70,10 +73,16 @@ TOPIC_ID_PATTERN = re.compile(r"[A-Za-z0-9_-]+")
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
     ),
-    "Accept": "*/*",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.dodsbirsttr.mil/topics-app/",
 }
+_cookie_jar = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_cookie_jar))
+_session_lock = threading.Lock()
+_session_ready = False
 INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 _print_lock = threading.Lock()
@@ -87,7 +96,8 @@ def default_workers() -> int:
     number of simultaneous connections to one government server.
     """
     cpus = os.cpu_count() or 4
-    return max(4, min(64, cpus * 5))
+    # Cap low: 64 parallel PDF fetches is enough for Akamai to 403 this IP.
+    return max(4, min(8, cpus * 5))
 
 
 def log(message: str) -> None:
@@ -358,18 +368,56 @@ def relpath(path: Path, base: Path) -> str:
     return str(path.relative_to(base)).replace("\\", "/")
 
 
+def _ensure_session() -> None:
+    """Load the topics app once so Akamai can issue bot cookies for later API calls."""
+    global _session_ready
+    if _session_ready:
+        return
+    with _session_lock:
+        if _session_ready:
+            return
+        headers = dict(HEADERS)
+        headers["Accept"] = (
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        )
+        request = urllib.request.Request(TOPICS_APP_URL, headers=headers)
+        try:
+            with _opener.open(request, timeout=30) as response:
+                response.read(4096)
+        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, OSError):
+            pass
+        _session_ready = True
+
+
+def _http_error_message(exc: urllib.error.HTTPError, url: str) -> str:
+    detail = exc.read(400)
+    exc.close()
+    if exc.code != 403:
+        return f"HTTP {exc.code} for {url}: {detail[:240]!r}"
+    text = html.unescape(detail.decode("utf-8", "replace"))
+    match = re.search(r"Reference\s*#\s*([0-9A-Za-z.]+)", text)
+    ref = match.group(1) if match else ""
+    target = url.split("?", 1)[0]
+    return (
+        f"HTTP 403 from DSIP (Akamai Access Denied) for {target}. "
+        "This is a WAF/bot block, not a login. "
+        f"In a browser on this PC open {TOPICS_APP_URL}. "
+        "If that page also says Access Denied, this network is blocked "
+        "(VPN, too many parallel downloads, or a temporary Akamai ban). "
+        "Wait, try a phone hotspot, then download again."
+        + (f" Akamai reference {ref}." if ref else "")
+    )
+
+
 def open_url(url: str, timeout: int) -> object:
+    _ensure_session()
     last_error: Exception | None = None
     for attempt in range(1, 4):
         try:
             request = urllib.request.Request(url, headers=HEADERS)
-            return urllib.request.urlopen(request, timeout=timeout)
+            return _opener.open(request, timeout=timeout)
         except urllib.error.HTTPError as exc:
-            detail = exc.read(300)
-            exc.close()
-            last_error = RuntimeError(
-                f"HTTP {exc.code} for {url}: {detail[:240]!r}"
-            )
+            last_error = RuntimeError(_http_error_message(exc, url))
             if exc.code not in RETRYABLE_STATUS or attempt == 3:
                 raise last_error from exc
         except urllib.error.URLError as exc:
@@ -471,10 +519,15 @@ def fetch_json(url: str) -> dict:
     return payload
 
 
+def public_search_param() -> dict:
+    """Catalog filter sent to DSIP. JSON nulls are omitted; some WAF rules flag them."""
+    return {key: value for key, value in SEARCH_PARAM.items() if value is not None}
+
+
 def search_page(page: int) -> dict:
     query = urlencode(
         {
-            "searchParam": json.dumps(SEARCH_PARAM, separators=(",", ":")),
+            "searchParam": json.dumps(public_search_param(), separators=(",", ":")),
             "size": PAGE_SIZE,
             "page": page,
         }

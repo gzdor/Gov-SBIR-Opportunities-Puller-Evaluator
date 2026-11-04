@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import queue
 import sys
 import threading
@@ -66,6 +67,28 @@ WORKFLOW_CHIPS = (
 CHIP_SPECS = DEPARTMENT_CHIPS + WORKFLOW_CHIPS
 DOWNLOAD_CHIP_KEYS = {key for _, key in CHIP_SPECS if not str(key).startswith("__")}
 CALL_FILTERS = ("All calls", "Pursue", "Watch", "Pass", "Untagged")
+PINNED_COLUMNS = ("call", "code", "title")
+DEFAULT_HIDDEN_COLUMNS = frozenset({"trl", "opens"})
+TABLE_HEADINGS = {
+    "call": ("Call", 70),
+    "code": ("Code", 130),
+    "title": ("Topic", 220),
+    "client": ("Client", 110),
+    "program": ("Program", 60),
+    "status": ("Status", 90),
+    "opens": ("Opens", 90),
+    "due": ("Due", 90),
+    "dueIn": ("Due in", 70),
+    "qaPublished": ("Q&A", 45),
+    "cmmc": ("CMMC", 60),
+    "problem": ("Problem / objective", 220),
+    "trl": ("TRL", 45),
+    "funding": ("Funding", 80),
+    "contract": ("Contract", 110),
+    "techVolLimit": ("Tech Vol Page Limit", 150),
+    "feasStudyLimit": ("Feasibility Study Page Limit", 180),
+    "pdf": ("PDF", 180),
+}
 
 
 class QueueReporter:
@@ -119,8 +142,12 @@ class App:
         self._selected_row: dict | None = None
 
         root.title(APP_TITLE)
-        root.minsize(960, 620)
+        root.minsize(1024, 680)
         theme.apply_dark_theme(root)
+        try:
+            root.iconphoto(True, theme.make_app_icon(root))
+        except tk.TclError:
+            pass
 
         self.folder_var = tk.StringVar(value=str(Path.home() / "Downloads"))
         self.phase_var = tk.StringVar(value="Idle")
@@ -137,17 +164,26 @@ class App:
         self.note_var = tk.StringVar(value="")
         self.tech_area_var = tk.StringVar(value="All tech areas")
         self.show_zero_components = tk.BooleanVar(value=False)
+        self.header_status_var = tk.StringVar(value="local only · no login")
+        self.status_var = tk.StringVar(value="Ready · nothing typed is sent to DSIP as searchText")
+        self.snapshot_var = tk.StringVar(value="No snapshot")
+        self.density_var = tk.StringVar(value="comfortable")
         self._bluf_rows: list[dict] = []
         self._topics_for_diff: list[dict] = []
         self._triage: dict[str, dict[str, str]] = {}
         self._diff_added: set[str] = set()
         self._diff_changed: set[str] = set()
-        self._dept_checks: dict[str, ttk.Checkbutton] = {}
+        self._dept_checks: dict[str, tk.Widget] = {}
         self._sort_column = ""
         self._sort_reverse = False
         self._zoom = 1.0
+        self._zoom_from_state = False
         self._note_loading = False
         self._note_bound_key = ""
+        self._resume_dir: Path | None = None
+        self._hidden_columns: set[str] = set(DEFAULT_HIDDEN_COLUMNS)
+        self._pdf_done = 0
+        self._pdf_total = 0
         self._chip_vars: dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=False) for _, key in CHIP_SPECS
         }
@@ -161,6 +197,13 @@ class App:
         self.tech_area_var.trace_add("write", lambda *_: self._on_filter_change())
         self._ensure_pdf_backend()
         self._restore_state()
+        if self.interactive and not self._zoom_from_state:
+            self._set_zoom(theme.display_zoom())
+        self._style_pills()
+        self._refresh_pipeline()
+        self._refresh_snapshot_list()
+        self._refresh_header_status()
+        self._update_empty_state()
 
     # ---- UI construction -------------------------------------------------
     def _build_widgets(self) -> None:
@@ -169,17 +212,38 @@ class App:
         accent.pack(fill="x", side="top")
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill="both", expand=True)
+        status = ttk.Frame(self.root, style="Status.TFrame", padding=(10, 4))
+        status.pack(fill="x", side="bottom")
+        ttk.Label(status, textvariable=self.status_var, style="Status.TLabel").pack(
+            side="left"
+        )
+        ttk.Label(
+            status,
+            text="Ctrl+K commands  ·  Ctrl+F find  ·  1/2/3/0 call",
+            style="Status.TLabel",
+        ).pack(side="right")
         frame = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(frame, text="Catalog")
         frame.columnconfigure(1, weight=1)
         self._frame = frame
         self._build_guide_tab()
 
+        header = ttk.Frame(frame, style="Header.TFrame")
+        header.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 6))
+        header.columnconfigure(1, weight=1)
+        ttk.Label(header, text="DSIP Discovery", style="Brand.TLabel").grid(
+            row=0, column=0, sticky="w", padx=(2, 12)
+        )
         ttk.Label(
-            frame,
-            text="Pull and evaluate open DoD SBIR/STTR DSIP opportunities",
-            style="Title.TLabel",
-        ).grid(row=0, column=0, columnspan=3, sticky="w", **pad)
+            header,
+            text="local open topics  ·  no login  ·  extractive only",
+            style="HeaderHint.TLabel",
+        ).grid(row=0, column=1, sticky="w")
+        ttk.Label(
+            header,
+            textvariable=self.header_status_var,
+            style="HeaderHint.TLabel",
+        ).grid(row=0, column=2, sticky="e", padx=8)
 
         self.setup_frame = ttk.Frame(frame)
         self.setup_frame.grid(row=1, column=0, columnspan=3, sticky="ew")
@@ -220,6 +284,21 @@ class App:
             style="Hint.TLabel",
         ).grid(row=3, column=0, columnspan=3, sticky="w", padx=10)
 
+        ttk.Label(self.setup_frame, text="Snapshot:").grid(
+            row=4, column=0, sticky="w", **pad
+        )
+        self.snapshot_combo = ttk.Combobox(
+            self.setup_frame,
+            textvariable=self.snapshot_var,
+            state="readonly",
+            width=48,
+        )
+        self.snapshot_combo.grid(row=4, column=1, sticky="ew", **pad)
+        self.snapshot_combo.bind("<<ComboboxSelected>>", self._on_snapshot_chosen)
+        ttk.Button(
+            self.setup_frame, text="Browse folder…", command=self.open_snapshot
+        ).grid(row=4, column=2, sticky="e", **pad)
+
         self.download_btn = ttk.Button(
             frame,
             textvariable=self.button_var,
@@ -256,40 +335,51 @@ class App:
         scrollbar = ttk.Scrollbar(self.log_frame, command=self.log.yview)
         scrollbar.grid(row=0, column=1, sticky="ns")
         self.log.configure(yscrollcommand=scrollbar.set)
+        self.log.tag_configure("ok", foreground=theme.OK)
+        self.log.tag_configure("warn", foreground=theme.WARN)
+        self.log.tag_configure("fail", foreground=theme.FAIL)
+
+        pipe = ttk.Frame(frame)
+        pipe.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(4, 2))
+        ttk.Label(pipe, text="Pipeline:", style="Hint.TLabel").pack(side="left", padx=(0, 8))
+        self._pipe_btns: dict[str, ttk.Button] = {}
+        for label in CALL_FILTERS:
+            btn = ttk.Button(
+                pipe,
+                text=label,
+                style="Call.TButton",
+                command=lambda name=label: self._set_call_filter(name),
+            )
+            btn.pack(side="left", padx=2)
+            self._pipe_btns[label] = btn
 
         chips = ttk.Frame(frame)
-        chips.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 2))
-        ttk.Label(chips, text="Component:").grid(row=0, column=0, sticky="nw")
+        chips.grid(row=7, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 2))
+        ttk.Label(chips, text="Component:", style="Hint.TLabel").grid(
+            row=0, column=0, sticky="nw"
+        )
         dept = ttk.Frame(chips)
         dept.grid(row=0, column=1, columnspan=12, sticky="w")
         self._dept_frame = dept
         for index, (label, key) in enumerate(DEPARTMENT_CHIPS):
-            button = ttk.Checkbutton(
-                dept,
-                text=label,
-                variable=self._chip_vars[key],
-                command=self._on_chips,
-            )
-            button.grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+            button = self._make_pill(dept, label, self._chip_vars[key], self._on_chips)
+            button.grid(row=index // 8, column=index % 8, sticky="w", padx=3, pady=2)
             self._dept_checks[key] = button
         ttk.Checkbutton(
             chips,
-            text="Show empty components",
+            text="Show empty",
             variable=self.show_zero_components,
             command=self._refresh_chip_labels,
         ).grid(row=0, column=13, sticky="e")
-        ttk.Label(chips, text="Narrow:").grid(row=1, column=0, sticky="w", pady=(4, 0))
+        ttk.Label(chips, text="Narrow:", style="Hint.TLabel").grid(
+            row=1, column=0, sticky="w", pady=(4, 0)
+        )
         work = ttk.Frame(chips)
         work.grid(row=1, column=1, columnspan=12, sticky="w", pady=(4, 0))
-        self._work_checks: dict[str, ttk.Checkbutton] = {}
+        self._work_checks: dict[str, tk.Widget] = {}
         for index, (label, key) in enumerate(WORKFLOW_CHIPS):
-            button = ttk.Checkbutton(
-                work,
-                text=label,
-                variable=self._chip_vars[key],
-                command=self._on_chips,
-            )
-            button.grid(row=index // 8, column=index % 8, sticky="w", padx=4)
+            button = self._make_pill(work, label, self._chip_vars[key], self._on_chips)
+            button.grid(row=index // 8, column=index % 8, sticky="w", padx=3, pady=2)
             self._work_checks[key] = button
         ttk.Label(chips, text="Calls:").grid(row=2, column=0, sticky="w", pady=(4, 0))
         self.call_filter = ttk.Combobox(
@@ -318,16 +408,16 @@ class App:
         ).grid(row=2, column=4, columnspan=8, sticky="w", pady=(4, 0))
 
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
-            row=7, column=0, columnspan=2, sticky="w", padx=10
+            row=8, column=0, columnspan=2, sticky="w", padx=10
         )
         ttk.Label(
             frame,
-            text="Select a row for details. Ctrl + / Ctrl − zoom.",
+            text="Pinned: Call, Code, Topic.  Ctrl++ / Ctrl+− zoom.",
             style="Hint.TLabel",
-        ).grid(row=7, column=2, sticky="e", padx=10)
+        ).grid(row=8, column=2, sticky="e", padx=10)
 
         tool = ttk.Frame(frame)
-        tool.grid(row=8, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
+        tool.grid(row=9, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 4))
         tool.columnconfigure(1, weight=1)
         ttk.Label(tool, text="Find in snapshot:").grid(row=0, column=0, sticky="w")
         self.table_filter_entry = ttk.Entry(tool, textvariable=self.table_filter_var)
@@ -352,71 +442,71 @@ class App:
             tools_wrap, text="Hide settings", command=self.toggle_chrome
         )
         self.settings_btn.grid(row=0, column=2, padx=2)
+        self.columns_btn = ttk.Button(
+            tools_wrap, text="Columns…", command=self._show_column_menu
+        )
+        self.columns_btn.grid(row=0, column=3, padx=2)
+        self.density_btn = ttk.Button(
+            tools_wrap, text="Compact", command=self._toggle_density
+        )
+        self.density_btn.grid(row=0, column=4, padx=2)
 
         pane = ttk.Panedwindow(frame, orient=tk.VERTICAL)
-        pane.grid(row=9, column=0, columnspan=3, sticky="nsew", **pad)
-        frame.rowconfigure(9, weight=1)
+        pane.grid(row=10, column=0, columnspan=3, sticky="nsew", **pad)
+        frame.rowconfigure(10, weight=1)
+        self._vpane = pane
 
         table_frame = ttk.Frame(pane)
         table_frame.columnconfigure(0, weight=1)
         table_frame.rowconfigure(0, weight=1)
 
-        columns = (
-            "call",
-            "code",
-            "title",
-            "client",
-            "program",
-            "status",
-            "opens",
-            "due",
-            "dueIn",
-            "qaPublished",
-            "cmmc",
-            "problem",
-            "trl",
-            "funding",
-            "contract",
-            "techVolLimit",
-            "feasStudyLimit",
-            "pdf",
-        )
+        columns = tuple(TABLE_HEADINGS)
         self._columns = columns
         self.table = ttk.Treeview(
             table_frame, columns=columns, show="headings", selectmode="browse"
         )
-        headings = {
-            "call": ("Call", 70),
-            "code": ("Code", 130),
-            "title": ("Topic", 200),
-            "client": ("Client", 110),
-            "program": ("Program", 60),
-            "status": ("Status", 90),
-            "opens": ("Opens", 90),
-            "due": ("Due", 90),
-            "dueIn": ("Due in", 70),
-            "qaPublished": ("Q&A", 45),
-            "cmmc": ("CMMC", 60),
-            "problem": ("Problem / objective", 220),
-            "trl": ("TRL", 45),
-            "funding": ("Funding", 80),
-            "contract": ("Contract", 110),
-            "techVolLimit": ("Tech Vol Page Limit", 150),
-            "feasStudyLimit": ("Feasibility Study Page Limit", 180),
-            "pdf": ("PDF", 180),
-        }
-        for key, (label, width) in headings.items():
+        for key, (label, width) in TABLE_HEADINGS.items():
             self.table.heading(key, text=label, command=lambda c=key: self._sort_by(c))
-            stretch = key in {"title", "problem"}
-            min_w = 120 if key in {"techVolLimit", "feasStudyLimit"} else 40
-            self.table.column(key, width=width, minwidth=min_w, stretch=stretch)
+            stretch = key == "problem"
+            pinned = key in PINNED_COLUMNS
+            min_w = 120 if key in {"techVolLimit", "feasStudyLimit", "title", "code"} else 40
+            self.table.column(
+                key,
+                width=width,
+                minwidth=min_w,
+                stretch=stretch and not pinned,
+            )
         self.table.tag_configure("closing", foreground=theme.WARN)
         self.table.tag_configure("soon", foreground=theme.SOON)
         self.table.tag_configure("closed", foreground=theme.CLOSED)
         self.table.tag_configure("open", foreground=theme.FG)
         self.table.tag_configure("unknown", foreground=theme.FG)
         self.table.tag_configure("pursue", foreground=theme.ACCENT)
+        self.table.tag_configure("odd", background=theme.ROW)
+        self.table.tag_configure("even", background=theme.ROW_ALT)
+        self.table.tag_configure("pdflink", foreground=theme.LINK)
         self.table.grid(row=0, column=0, sticky="nsew")
+        self._empty = ttk.Frame(table_frame, padding=24)
+        self._empty.place(relx=0.5, rely=0.45, anchor="center")
+        ttk.Label(self._empty, text="No snapshot on screen", style="Title.TLabel").pack()
+        ttk.Label(
+            self._empty,
+            text=(
+                "Download this cycle, or pick a snapshot above.\n"
+                "Nothing you type is sent to DSIP as searchText."
+            ),
+            style="Hint.TLabel",
+            justify="center",
+        ).pack(pady=8)
+        empty_btns = ttk.Frame(self._empty)
+        empty_btns.pack()
+        ttk.Button(
+            empty_btns, text="Download all opportunities", command=self.start_download,
+            style="Accent.TButton",
+        ).pack(side="left", padx=4)
+        ttk.Button(
+            empty_btns, text="Open snapshot…", command=self.open_snapshot
+        ).pack(side="left", padx=4)
         yscroll = ttk.Scrollbar(table_frame, orient="vertical", command=self.table.yview)
         xscroll = ttk.Scrollbar(
             table_frame, orient="horizontal", command=self.table.xview
@@ -431,6 +521,7 @@ class App:
         self.table.bind("<Key-2>", lambda _e: self._set_selected_triage("watch"))
         self.table.bind("<Key-3>", lambda _e: self._set_selected_triage("pass"))
         self.table.bind("<Key-0>", lambda _e: self._set_selected_triage(""))
+        self._apply_display_columns()
 
         detail = ttk.LabelFrame(pane, text="Topic", padding=8)
         detail.columnconfigure(0, weight=1)
@@ -450,6 +541,11 @@ class App:
             borderwidth=0,
         )
         self.detail_text.grid(row=1, column=0, columnspan=3, sticky="nsew")
+        self.detail_text.tag_configure(
+            "h", foreground=theme.MUTED, font=("Segoe UI", 9, "bold")
+        )
+        self.detail_text.tag_configure("body", foreground=theme.FG)
+        self.detail_text.tag_configure("limit", foreground=theme.ACCENT)
         detail.rowconfigure(1, weight=1)
         actions = ttk.Frame(detail)
         actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
@@ -491,20 +587,39 @@ class App:
 
         pane.add(table_frame, weight=4)
         pane.add(detail, weight=1)
-        theme.apply_zoom(self.root, self._zoom, self.log)
+        theme.apply_zoom(self.root, self._zoom, self.log, self.density_var.get())
         self.detail_text.configure(font=("Segoe UI", 10))
         self.guide_text.configure(font=("Segoe UI", 10))
 
     def _build_guide_tab(self) -> None:
         guide = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(guide, text="How SBIR works")
-        guide.columnconfigure(0, weight=1)
+        guide.columnconfigure(1, weight=1)
         guide.rowconfigure(1, weight=1)
         ttk.Label(
             guide,
             text="How the SBIR / STTR program works",
             style="Title.TLabel",
-        ).grid(row=0, column=0, sticky="w", pady=(0, 8))
+        ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 8))
+        ttk.Label(
+            guide,
+            text="Jump",
+            style="Hint.TLabel",
+        ).grid(row=1, column=0, sticky="nw", padx=(0, 8))
+        nav = tk.Listbox(
+            guide,
+            height=16,
+            width=28,
+            activestyle="dotbox",
+            bg=theme.FIELD,
+            fg=theme.FG,
+            selectbackground=theme.SELECT,
+            highlightthickness=0,
+            borderwidth=0,
+            font=("Segoe UI", 9),
+        )
+        nav.grid(row=1, column=0, sticky="nsw", padx=(0, 8))
+        self._guide_nav = nav
         self.guide_text = tk.Text(
             guide,
             wrap="word",
@@ -515,17 +630,28 @@ class App:
             selectbackground=theme.SELECT,
             highlightthickness=0,
             borderwidth=0,
-            padx=8,
-            pady=8,
+            padx=10,
+            pady=10,
+            spacing1=2,
+            spacing3=6,
         )
         scroll = ttk.Scrollbar(guide, command=self.guide_text.yview)
         self.guide_text.configure(yscrollcommand=scroll.set)
-        self.guide_text.grid(row=1, column=0, sticky="nsew")
-        scroll.grid(row=1, column=1, sticky="ns")
-        self.guide_text.insert("1.0", sbir_guide.guide_plain_text())
-        self.guide_text.configure(state="disabled")
+        self.guide_text.grid(row=1, column=1, sticky="nsew")
+        scroll.grid(row=1, column=2, sticky="ns")
+        self.guide_text.tag_configure(
+            "title", foreground=theme.FG, font=("Segoe UI", 14, "bold")
+        )
+        self.guide_text.tag_configure("lead", foreground=theme.MUTED)
+        self.guide_text.tag_configure(
+            "h", foreground=theme.ACCENT, font=("Segoe UI", 11, "bold")
+        )
+        self.guide_text.tag_configure("body", foreground=theme.FG)
+        self.guide_text.tag_configure("mono", font=("Consolas", 9), foreground=theme.FG)
+        self._fill_guide_text()
+        nav.bind("<<ListboxSelect>>", self._on_guide_nav)
         links = ttk.Frame(guide)
-        links.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        links.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         ttk.Label(links, text="Open in browser:", style="Hint.TLabel").grid(
             row=0, column=0, sticky="w", padx=(0, 6)
         )
@@ -543,6 +669,259 @@ class App:
         import webbrowser
 
         webbrowser.open(url)
+
+    def _fill_guide_text(self) -> None:
+        text = self.guide_text
+        nav = self._guide_nav
+        text.configure(state="normal")
+        text.delete("1.0", "end")
+        nav.delete(0, "end")
+        text.insert("end", "How the SBIR / STTR program works\n", "title")
+        text.insert(
+            "end",
+            "Local notes for a BD or capture analyst. Official rules win if they "
+            "disagree with anything here.\n\n",
+            "lead",
+        )
+        for title, body in sbir_guide.SECTIONS:
+            mark = f"sec_{title[:24]}"
+            text.mark_set(mark, "end")
+            text.mark_gravity(mark, "left")
+            nav.insert("end", title)
+            text.insert("end", f"{title}\n", "h")
+            tag = "mono" if title.startswith("FY27") else "body"
+            text.insert("end", f"{body}\n\n", tag)
+        text.insert("end", "Links (opens in your browser)\n", "h")
+        for label, url in sbir_guide.LINKS:
+            text.insert("end", f"• {label}\n  {url}\n", "body")
+        text.configure(state="disabled")
+        self._guide_marks = [f"sec_{title[:24]}" for title, _ in sbir_guide.SECTIONS]
+
+    def _on_guide_nav(self, _event: tk.Event | None = None) -> None:
+        selection = self._guide_nav.curselection()
+        if not selection:
+            return
+        index = int(selection[0])
+        marks = getattr(self, "_guide_marks", [])
+        if 0 <= index < len(marks):
+            self.guide_text.see(marks[index])
+
+    def _make_pill(
+        self, parent: tk.Widget, text: str, var: tk.BooleanVar, command
+    ) -> tk.Checkbutton:
+        btn = tk.Checkbutton(
+            parent,
+            text=text,
+            variable=var,
+            command=lambda: (self._style_pills(), command()),
+            indicatoron=False,
+            selectcolor=theme.ACCENT,
+            bg=theme.HEAD,
+            fg=theme.FG,
+            activebackground=theme.SELECT,
+            activeforeground=theme.FG,
+            highlightthickness=0,
+            bd=0,
+            padx=8,
+            pady=3,
+            font=("Segoe UI", 9),
+            cursor="hand2",
+        )
+        return btn
+
+    def _style_pills(self) -> None:
+        widgets = list(self._dept_checks.values()) + list(
+            getattr(self, "_work_checks", {}).values()
+        )
+        for btn in widgets:
+            key = None
+            for candidate, widget in {**self._dept_checks, **getattr(self, "_work_checks", {})}.items():
+                if widget is btn:
+                    key = candidate
+                    break
+            on = bool(key and self._chip_vars[key].get())
+            if on:
+                btn.configure(
+                    bg=theme.ACCENT,
+                    fg="#0b1a12",
+                    activebackground="#5ef0ad",
+                    activeforeground="#0b1a12",
+                )
+            else:
+                btn.configure(
+                    bg=theme.HEAD,
+                    fg=theme.FG,
+                    activebackground=theme.SELECT,
+                    activeforeground=theme.FG,
+                )
+
+    def _set_call_filter(self, name: str) -> None:
+        self.call_filter_var.set(name)
+
+    def _refresh_snapshot_list(self) -> None:
+        parent = Path(self.folder_var.get().strip() or "")
+        names: list[str] = []
+        current = ""
+        if parent.is_dir():
+            found = sorted(
+                (
+                    path
+                    for path in parent.glob("all_dsip_opportunities_*")
+                    if path.is_dir() and (path / "manifest.json").is_file()
+                ),
+                key=lambda path: path.stat().st_mtime,
+                reverse=True,
+            )
+            names = [path.name for path in found]
+        if self.output_dir and self._has_manifest(self.output_dir):
+            current = self.output_dir.name
+        elif names:
+            current = names[0]
+        if getattr(self, "snapshot_combo", None) is not None:
+            self.snapshot_combo.configure(values=tuple(names) or ("No snapshot",))
+        self.snapshot_var.set(current or "No snapshot")
+
+    def _on_snapshot_chosen(self, _event: tk.Event | None = None) -> None:
+        name = self.snapshot_var.get().strip()
+        parent = Path(self.folder_var.get().strip() or "")
+        folder = parent / name
+        if self._has_manifest(folder):
+            self._load_snapshot(folder)
+
+    def _refresh_header_status(self) -> None:
+        n = len(self._bluf_rows)
+        if self.output_dir and self._has_manifest(self.output_dir):
+            stamp = self.output_dir.name.replace("all_dsip_opportunities_", "")
+            self.header_status_var.set(f"{stamp}  ·  {n} topics  ·  local only")
+        elif n:
+            self.header_status_var.set(f"{n} topics  ·  local only")
+        else:
+            self.header_status_var.set("local only  ·  no login")
+        pdf = "pypdf on" if analyze.pypdf_available() else "pypdf off"
+        phase = self.phase_var.get()
+        self.status_var.set(f"{phase}  ·  {pdf}  ·  workers {core.default_workers()}")
+
+    def _update_empty_state(self) -> None:
+        empty = getattr(self, "_empty", None)
+        if empty is None:
+            return
+        if self.table.get_children():
+            empty.place_forget()
+        else:
+            empty.place(relx=0.5, rely=0.42, anchor="center")
+
+    def _apply_display_columns(self) -> None:
+        visible = [
+            key
+            for key in self._columns
+            if key in PINNED_COLUMNS or key not in self._hidden_columns
+        ]
+        self.table.configure(displaycolumns=visible)
+
+    def _show_column_menu(self) -> None:
+        menu = tk.Menu(self.root, tearoff=0, bg=theme.PANEL, fg=theme.FG)
+        for key, (label, _width) in TABLE_HEADINGS.items():
+            if key in PINNED_COLUMNS:
+                menu.add_command(label=f"{label}  (pinned)", state="disabled")
+                continue
+            shown = key not in self._hidden_columns
+
+            def toggle(col=key, currently=shown) -> None:
+                if currently:
+                    self._hidden_columns.add(col)
+                else:
+                    self._hidden_columns.discard(col)
+                self._apply_display_columns()
+                self._save_state()
+
+            menu.add_command(
+                label=("✓  " if shown else "    ") + label, command=toggle
+            )
+        try:
+            menu.tk_popup(
+                self.columns_btn.winfo_rootx(),
+                self.columns_btn.winfo_rooty() + self.columns_btn.winfo_height(),
+            )
+        finally:
+            menu.grab_release()
+
+    def _toggle_density(self) -> None:
+        nxt = "compact" if self.density_var.get() != "compact" else "comfortable"
+        self.density_var.set(nxt)
+        self.density_btn.configure(
+            text="Comfortable" if nxt == "compact" else "Compact"
+        )
+        self._set_zoom(self._zoom)
+        self._save_state()
+
+    def _palette_commands(self) -> list[tuple[str, object]]:
+        return [
+            ("Download all / matching", self.start_download),
+            ("Open snapshot…", self.open_snapshot),
+            ("Find in snapshot", self._focus_find),
+            ("Export CSV", self.export_csv),
+            ("Diff previous…", self.diff_previous),
+            ("Copy brief", self._copy_selected_brief),
+            ("Copy code", self._copy_selected_code),
+            ("Open PDF", self._open_selected_pdf),
+            ("Open instruction PDF", self._open_selected_instruction),
+            ("Toggle download settings", self.toggle_chrome),
+            ("Columns…", self._show_column_menu),
+            ("Toggle compact density", self._toggle_density),
+            ("How SBIR works", lambda: self.notebook.select(1)),
+            ("Catalog", lambda: self.notebook.select(0)),
+        ]
+
+    def _open_palette(self, _event: tk.Event | None = None) -> str:
+        commands = self._palette_commands()
+        win = tk.Toplevel(self.root)
+        win.title("Commands")
+        win.configure(bg=theme.PANEL)
+        win.transient(self.root)
+        win.geometry("420x320")
+        entry_var = tk.StringVar()
+        box = ttk.Entry(win, textvariable=entry_var)
+        box.pack(fill="x", padx=10, pady=10)
+        listing = tk.Listbox(
+            win,
+            bg=theme.FIELD,
+            fg=theme.FG,
+            selectbackground=theme.SELECT,
+            highlightthickness=0,
+            borderwidth=0,
+            font=("Segoe UI", 10),
+        )
+        listing.pack(fill="both", expand=True, padx=10, pady=(0, 10))
+
+        def filtered() -> list[tuple[str, object]]:
+            needle = entry_var.get().strip().lower()
+            if not needle:
+                return commands
+            return [item for item in commands if needle in item[0].lower()]
+
+        def refresh(*_a: object) -> None:
+            listing.delete(0, "end")
+            for label, _fn in filtered():
+                listing.insert("end", label)
+            if listing.size():
+                listing.selection_set(0)
+
+        def run(_event: tk.Event | None = None) -> None:
+            rows = filtered()
+            sel = listing.curselection()
+            index = int(sel[0]) if sel else 0
+            win.destroy()
+            if rows and 0 <= index < len(rows):
+                rows[index][1]()
+
+        entry_var.trace_add("write", refresh)
+        box.bind("<Return>", run)
+        listing.bind("<Return>", run)
+        listing.bind("<Double-1>", run)
+        win.bind("<Escape>", lambda _e: win.destroy())
+        refresh()
+        box.focus_set()
+        return "break"
 
     def _bind_zoom(self) -> None:
         for seq in (
@@ -565,6 +944,10 @@ class App:
         self.root.bind_all("<Control-F>", self._focus_find)
         self.root.bind_all("<Control-b>", self._on_copy_brief)
         self.root.bind_all("<Control-B>", self._on_copy_brief)
+        self.root.bind_all("<Control-k>", self._open_palette)
+        self.root.bind_all("<Control-K>", self._open_palette)
+        self.root.bind_all("<Control-p>", self._open_palette)
+        self.root.bind_all("<Control-P>", self._open_palette)
 
     def _focus_find(self, _event: tk.Event | None = None) -> str:
         self.table_filter_entry.focus_set()
@@ -584,11 +967,14 @@ class App:
         return "break"
 
     def _set_zoom(self, scale: float) -> None:
-        self._zoom = theme.apply_zoom(self.root, scale, self.log)
+        self._zoom = theme.apply_zoom(
+            self.root, scale, self.log, self.density_var.get()
+        )
         size = max(6, int(round(10 * self._zoom)))
         self.detail_text.configure(font=("Segoe UI", size))
         if getattr(self, "guide_text", None) is not None:
             self.guide_text.configure(font=("Segoe UI", size))
+        self._style_pills()
 
     # ---- actions ---------------------------------------------------------
     def browse(self) -> None:
@@ -598,6 +984,7 @@ class App:
         )
         if chosen:
             self.folder_var.set(chosen)
+            self._refresh_snapshot_list()
             self._save_state()
 
     def toggle_chrome(self) -> None:
@@ -628,17 +1015,20 @@ class App:
             self._warn(f"Cannot use that folder:\n{exc}")
             return
 
+        self._resume_dir = (
+            self.output_dir if self._has_manifest(self.output_dir) else None
+        )
         self.output_dir = core.timestamped_dir(parent)
         self.finished = False
         self.exit_code = None
         self._set_chrome_collapsed(False)
         self._set_running(True)
-        self._bluf_rows = []
-        self._topics_for_diff = []
         self._clear_log()
-        self._clear_table()
         self.bluf_caption_var.set("Fetching catalog…")
-        self.phase_var.set("Starting...")
+        self.phase_var.set("Starting catalog scan…")
+        self._pdf_done = 0
+        self._pdf_total = 0
+        self._refresh_header_status()
         self.progress.configure(mode="indeterminate")
         self.progress.start(12)
         self._indeterminate = True  # bar is animating until the first phase begins
@@ -659,7 +1049,8 @@ class App:
         try:
             code = core.run(output_dir, reporter=reporter, search_phrase=phrase)
             self.events.put(("finished", code))
-        except Exception:  # noqa: BLE001 - surface any crash to the UI
+        except Exception as exc:  # noqa: BLE001 - surface any crash to the UI
+            self.events.put(("status", str(exc)))
             self.events.put(("status", traceback.format_exc()))
             self.events.put(("finished", 1))
 
@@ -695,12 +1086,20 @@ class App:
             self.progress.stop()  # stop() zeroes the value; we set it below
             self._indeterminate = False
             self.progress.configure(mode="determinate", maximum=max(1, total), value=0)
-            self.phase_var.set(f"{label}: 0/{total}")
+            if "topic PDF" in label.lower():
+                self._pdf_total = total
+                self._pdf_done = 0
+            self.phase_var.set(f"{label}  0/{total}")
+            self._refresh_header_status()
         elif kind == "advance":
             info = event[1]
             self.progress.configure(value=info["done"])
-            label = self.phase_var.get().split(":", 1)[0]
-            self.phase_var.set(f"{label}: {info['done']}/{info['total']}")
+            label = self._phase_label or self.phase_var.get().split(":", 1)[0]
+            if "topic PDF" in str(self._phase_label).lower():
+                self._pdf_done = info["done"]
+                self._pdf_total = info["total"]
+            self.phase_var.set(f"{label}  {info['done']}/{info['total']}")
+            self._refresh_header_status()
             if info["failure"]:
                 self._append_log(info["failure"])
         elif kind == "end_phase":
@@ -723,6 +1122,8 @@ class App:
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
             self._stamp_triage(row)
         self._fill_tech_areas()
+        self.phase_var.set(f"Catalog {len(self._bluf_rows)} topics")
+        self._refresh_header_status()
         self._render_table()
         self._refresh_caption(pending=True)
         self._save_state()
@@ -778,9 +1179,22 @@ class App:
             # Fill the bar to 100% on a clean finish.
             self.progress.configure(value=self.progress["maximum"])
         self.phase_var.set("Done" if code == 0 else "Finished with issues")
-        self._load_bluf_table()
+        if self._has_manifest(self.output_dir):
+            self._load_bluf_table()
+            self._set_chrome_collapsed(True)
+        else:
+            if self._has_manifest(self._resume_dir):
+                self.output_dir = self._resume_dir
+                self._load_bluf_table()
+            if code != 0:
+                self.bluf_caption_var.set(
+                    "Download failed. The previous snapshot is still shown. "
+                    "See the log (Download settings) for the error."
+                )
+            self._set_chrome_collapsed(code == 0)
+        self._refresh_snapshot_list()
+        self._refresh_header_status()
         self._set_running(False)
-        self._set_chrome_collapsed(True)
         self._save_state()
         if self.on_finished:
             self.on_finished(code)
@@ -802,8 +1216,6 @@ class App:
         if not path:
             return
         try:
-            import os
-
             os.startfile(str(path))  # type: ignore[attr-defined]  # Windows only
         except Exception:  # noqa: BLE001 - opening the folder is best-effort
             pass
@@ -816,6 +1228,8 @@ class App:
         self.folder_entry.configure(state=state)
         self.filter_entry.configure(state=state)
         self.open_snapshot_btn.configure(state=state)
+        if getattr(self, "snapshot_combo", None) is not None:
+            self.snapshot_combo.configure(state="disabled" if running else "readonly")
 
     def _sync_button_label(self, *_args: object) -> None:
         if self.filter_var.get().strip() or self._chip_phrase():
@@ -906,6 +1320,20 @@ class App:
             if button is None:
                 continue
             button.configure(text=f"{label} ({counts[key]})")
+        self._style_pills()
+        self._refresh_pipeline()
+
+    def _refresh_pipeline(self) -> None:
+        summary = analyze.pipeline_summary(self._bluf_rows)
+        labels = {
+            "All calls": f"All {summary.get('topics', 0)}",
+            "Pursue": f"Pursue {summary.get('pursue', 0)}",
+            "Watch": f"Watch {summary.get('watch', 0)}",
+            "Pass": f"Pass {summary.get('pass', 0)}",
+            "Untagged": f"Untagged {summary.get('untagged', 0)}",
+        }
+        for name, btn in getattr(self, "_pipe_btns", {}).items():
+            btn.configure(text=labels.get(name, name))
 
     def _clear_table(self) -> None:
         for item in self.table.get_children():
@@ -919,6 +1347,8 @@ class App:
         self.output_dir = folder
         self._load_bluf_table()
         self._set_chrome_collapsed(True)
+        self._refresh_snapshot_list()
+        self._refresh_header_status()
         self._save_state()
         return True
 
@@ -958,23 +1388,77 @@ class App:
             self.tech_area_var.set(tech)
         if payload.get("show_zero_components") is True:
             self.show_zero_components.set(True)
+        density = payload.get("density")
+        if density in {"comfortable", "compact"}:
+            self.density_var.set(density)
+            if getattr(self, "density_btn", None) is not None:
+                self.density_btn.configure(
+                    text="Comfortable" if density == "compact" else "Compact"
+                )
+        hidden = payload.get("hidden_columns")
+        if isinstance(hidden, list):
+            self._hidden_columns = {
+                str(item) for item in hidden if str(item) not in PINNED_COLUMNS
+            }
+            self._apply_display_columns()
+        zoom = payload.get("zoom")
+        if isinstance(zoom, (int, float)) and zoom:
+            self._zoom_from_state = True
+            self._set_zoom(float(zoom))
+        geom = payload.get("geometry")
+        if isinstance(geom, str) and geom and self.interactive:
+            try:
+                self.root.geometry(geom)
+            except tk.TclError:
+                pass
         last = payload.get("last_output")
-        if last and (Path(last) / "manifest.json").is_file():
-            self.output_dir = Path(last)
+        folder = Path(last) if last else None
+        if not self._has_manifest(folder):
+            parent_text = self.folder_var.get().strip() or str(payload.get("parent") or "")
+            folder = self._latest_snapshot(Path(parent_text)) if parent_text else None
+        if self._has_manifest(folder):
+            self.output_dir = folder
             self._load_bluf_table()
             self._set_chrome_collapsed(True)
             self.phase_var.set("Last snapshot")
+            self._refresh_header_status()
+
+    @staticmethod
+    def _has_manifest(folder: Path | None) -> bool:
+        return bool(folder) and (Path(folder) / "manifest.json").is_file()
+
+    @staticmethod
+    def _latest_snapshot(parent: Path) -> Path | None:
+        if not parent.is_dir():
+            return None
+        found = [
+            path
+            for path in parent.glob("all_dsip_opportunities_*")
+            if path.is_dir() and (path / "manifest.json").is_file()
+        ]
+        if not found:
+            return None
+        return max(found, key=lambda path: path.stat().st_mtime)
 
     def _save_state(self) -> None:
+        last = ""
+        if self._has_manifest(self.output_dir):
+            last = str(self.output_dir)
+        elif self._has_manifest(self._resume_dir):
+            last = str(self._resume_dir)
         payload = {
             "parent": self.folder_var.get().strip(),
-            "last_output": str(self.output_dir) if self.output_dir else "",
+            "last_output": last,
             "triage": self._triage,
             "chips": [key for key, var in self._chip_vars.items() if var.get()],
             "find": self.table_filter_var.get(),
             "call_filter": self.call_filter_var.get(),
             "tech_area": self.tech_area_var.get(),
             "show_zero_components": bool(self.show_zero_components.get()),
+            "zoom": self._zoom,
+            "density": self.density_var.get(),
+            "hidden_columns": sorted(self._hidden_columns),
+            "geometry": self.root.geometry() if self.interactive else "",
         }
         try:
             STATE_FILE.write_text(
@@ -1232,9 +1716,13 @@ class App:
             y0 = 0.0
         self._clear_table()
         for index, row in enumerate(self._visible_rows()):
-            tags = [analyze.urgency(row)]
-            if analyze.normalize_triage(row.get("call")) == "pursue":
+            tags = [analyze.urgency(row), "even" if index % 2 else "odd"]
+            call = analyze.normalize_triage(row.get("call"))
+            if call == "pursue":
                 tags.append("pursue")
+            pdf_name = str(row.get("pdf") or "")
+            if pdf_name and pdf_name not in {"Failed", "—"}:
+                tags.append("pdflink")
             iid = str(row.get("topicId") or f"row-{index}")
             self.table.insert(
                 "",
@@ -1258,6 +1746,8 @@ class App:
         self._refresh_chip_labels()
         if self._bluf_rows:
             self._refresh_caption()
+        self._update_empty_state()
+        self._refresh_header_status()
 
     def _sort_by(self, column: str) -> None:
         if self._sort_column == column:
@@ -1362,33 +1852,58 @@ class App:
             and problem not in overview
         ):
             extra_problem = problem
-        body = "\n".join(
-            [
-                f"Client: {row.get('client') or '—'}",
-                f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
-                f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
-                f"Tech vol page limit: {row.get('techVolLimit') or ''}    Feasibility study page limit: {row.get('feasStudyLimit') or ''}",
-                f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
-                f"Call: {call}",
-                f"CMMC: {row.get('cmmc') or '—'}    ITAR: {itar}",
-                f"Q&A: {row.get('qaPublished') or 0} published ({row.get('qaStatus') or '—'})",
-                f"TPOC: {row.get('tpoc') or '—'}",
-                f"Keywords: {row.get('keywords') or '—'}",
-                f"Tech areas: {areas}",
-                f"PDF: {row.get('pdf') or '—'}",
-                "",
-                "Overview (from the topic details / PDF — local extract, not a cloud model)",
-                overview or "—",
-            ]
+        limit_line = (
+            f"Tech vol page limit: {row.get('techVolLimit') or ''}    "
+            f"Feasibility study page limit: {row.get('feasStudyLimit') or ''}"
         )
-        if extra_problem:
-            body = f"{body}\n\n{extra_problem}"
-        excerpt = str(row.get("qaExcerpt") or "").strip()
-        if excerpt:
-            body = f"{body}\n\nPublished Q&A\n{excerpt}"
+        sections = [
+            (
+                "ACTIONS / META",
+                "\n".join(
+                    [
+                        f"Client: {row.get('client') or '—'}    Call: {call}",
+                        f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
+                        f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
+                        f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
+                    ]
+                ),
+            ),
+            ("LIMITS", limit_line),
+            (
+                "CMMC / ITAR",
+                f"CMMC: {row.get('cmmc') or '—'}    ITAR: {itar}",
+            ),
+            (
+                "Q&A",
+                f"Q&A: {row.get('qaPublished') or 0} published ({row.get('qaStatus') or '—'})",
+            ),
+            (
+                "OBJECTIVE",
+                "\n".join(
+                    [
+                        f"TPOC: {row.get('tpoc') or '—'}",
+                        f"Keywords: {row.get('keywords') or '—'}",
+                        f"Tech areas: {areas}",
+                        f"PDF: {row.get('pdf') or '—'}",
+                        "",
+                        "Overview (from the topic details / PDF — local extract, not a cloud model)",
+                        overview or "—",
+                    ]
+                ),
+            ),
+        ]
         self.detail_text.configure(state="normal")
         self.detail_text.delete("1.0", "end")
-        self.detail_text.insert("1.0", body)
+        for heading, chunk in sections:
+            self.detail_text.insert("end", f"{heading}\n", "h")
+            tag = "limit" if heading == "LIMITS" else "body"
+            self.detail_text.insert("end", f"{chunk}\n\n", tag)
+        if extra_problem:
+            self.detail_text.insert("end", extra_problem + "\n\n", "body")
+        excerpt = str(row.get("qaExcerpt") or "").strip()
+        if excerpt:
+            self.detail_text.insert("end", "Published Q&A\n", "h")
+            self.detail_text.insert("end", excerpt + "\n", "body")
         self.detail_text.configure(state="disabled")
         self._note_loading = True
         self.note_var.set(str(row.get("note") or ""))
@@ -1537,12 +2052,16 @@ class App:
         if row:
             self.table.selection_set(item)
             self._show_detail(row)
-        if index < 0 or index >= len(self._columns) or self._columns[index] != "pdf":
+        displayed = list(self.table.cget("displaycolumns"))
+        if not displayed or displayed == ["#all"]:
+            displayed = list(self._columns)
+        if index < 0 or index >= len(displayed) or displayed[index] != "pdf":
             return
         values = self.table.item(item, "values")
-        if not values or index >= len(values):
+        pdf_index = self._columns.index("pdf")
+        if not values or pdf_index >= len(values):
             return
-        pdf_name = values[index]
+        pdf_name = values[pdf_index]
         if not self.output_dir or not pdf_name or pdf_name in {"Failed", "—"}:
             return
         if not analyze.open_local_pdf(self.output_dir, pdf_name):
@@ -1553,9 +2072,21 @@ class App:
 
     def _append_log(self, message: str) -> None:
         self.log.configure(state="normal")
-        self.log.insert("end", message + "\n")
+        lower = message.lower()
+        tag = ""
+        if "403" in lower or "error" in lower or "fail" in lower or "traceback" in lower:
+            tag = "fail"
+        elif "warn" in lower or "could not" in lower:
+            tag = "warn"
+        elif "ok" in lower or "stated" in lower or "finished" in lower or "exported" in lower:
+            tag = "ok"
+        if tag:
+            self.log.insert("end", message + "\n", tag)
+        else:
+            self.log.insert("end", message + "\n")
         self.log.see("end")
         self.log.configure(state="disabled")
+        self.status_var.set(message.splitlines()[0][:140] if message else self.status_var.get())
 
     def _clear_log(self) -> None:
         self.log.configure(state="normal")

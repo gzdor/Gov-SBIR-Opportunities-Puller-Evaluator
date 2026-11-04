@@ -21,6 +21,7 @@ import pytest
 import analyze
 import gui
 import main
+import sbir_guide
 
 
 @pytest.fixture(autouse=True)
@@ -426,6 +427,118 @@ def test_gui_restores_last_snapshot(tmp_path):
         root.destroy()
 
 
+def test_gui_restores_latest_manifest_if_last_output_is_empty(tmp_path):
+    good = tmp_path / "all_dsip_opportunities_20261103_062212"
+    good.mkdir()
+    (good / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [],
+                "bluf": [
+                    {
+                        "topicId": "t0",
+                        "code": "DAF01",
+                        "title": "Illumination",
+                        "client": "USAF",
+                        "program": "SBIR",
+                        "status": "Open",
+                        "opens": "2026-10-28",
+                        "due": "2026-11-25",
+                        "dueIn": "26d",
+                        "problem": "Light",
+                        "trl": "—",
+                        "funding": "—",
+                        "contract": "SBIR",
+                        "pdf": "topic.pdf",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    empty = tmp_path / "all_dsip_opportunities_20261103_165642"
+    empty.mkdir()
+    gui.STATE_FILE.write_text(
+        json.dumps({"parent": str(tmp_path), "last_output": str(empty)}),
+        encoding="utf-8",
+    )
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        root.update()
+        assert app.output_dir == good
+        assert len(app.table.get_children()) == 1
+        assert _row_values(app)["code"] == "DAF01"
+    finally:
+        root.destroy()
+
+
+def test_gui_failed_download_keeps_previous_snapshot(tmp_path, monkeypatch):
+    snap = tmp_path / "all_dsip_opportunities_20261103_062212"
+    snap.mkdir()
+    (snap / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [],
+                "bluf": [
+                    {
+                        "topicId": "t0",
+                        "code": "DAF01",
+                        "title": "Illumination",
+                        "client": "USAF",
+                        "program": "SBIR",
+                        "status": "Open",
+                        "opens": "2026-10-28",
+                        "due": "2026-11-25",
+                        "dueIn": "26d",
+                        "problem": "Light",
+                        "trl": "—",
+                        "funding": "—",
+                        "contract": "SBIR",
+                        "pdf": "topic.pdf",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    gui.STATE_FILE.write_text(
+        json.dumps({"parent": str(tmp_path), "last_output": str(snap)}),
+        encoding="utf-8",
+    )
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("HTTP 403 for DSIP search: Access Denied")
+
+    monkeypatch.setattr(main, "run", boom)
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app.folder_var.set(str(tmp_path))
+        root.update()
+        assert len(app.table.get_children()) == 1
+        app.download_btn.invoke()
+        deadline = time.time() + 15
+        while not app.finished and time.time() < deadline:
+            root.update()
+            time.sleep(0.02)
+        root.update()
+        assert app.finished
+        assert app.exit_code == 1
+        assert len(app.table.get_children()) == 1
+        assert _row_values(app)["code"] == "DAF01"
+        assert app._chrome_collapsed is False
+        assert "Download failed" in app.bluf_caption_var.get()
+        saved = json.loads(gui.STATE_FILE.read_text(encoding="utf-8"))
+        assert saved["last_output"] == str(snap)
+    except Exception as exc:
+        if "scale.tcl" in str(exc):
+            pytest.skip(f"conda Tk scale.tcl flake: {exc}")
+        raise
+    finally:
+        root.destroy()
+
+
 def test_gui_chips_and_default_due_sort():
     root = _make_root()
     try:
@@ -536,6 +649,26 @@ def test_gui_has_how_sbir_works_tab(monkeypatch):
         app._open_guide_link("not-a-url")
         app._open_guide_link("https://www.dodsbirsttr.mil/topics-app/")
         assert opened == ["https://www.dodsbirsttr.mil/topics-app/"]
+    finally:
+        root.destroy()
+
+
+def test_gui_chrome_pills_and_pinned_columns():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        assert app.header_status_var.get()
+        shown = tuple(app.table.cget("displaycolumns"))
+        assert "code" in shown and "title" in shown and "call" in shown
+        assert "trl" not in shown
+        assert "opens" not in shown
+        assert "techVolLimit" in shown
+        assert app._guide_nav.size() == len(sbir_guide.section_titles())
+        labels = [item[0] for item in app._palette_commands()]
+        assert "Find in snapshot" in labels
+        assert any("Download" in item for item in labels)
+        app._set_call_filter("Pursue")
+        assert app.call_filter_var.get() == "Pursue"
     finally:
         root.destroy()
 

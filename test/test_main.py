@@ -1,7 +1,9 @@
 """Tests for the DSIP open-topics downloader. Network calls are stubbed."""
 
 import json
+import urllib.error
 from datetime import datetime, timezone
+from io import BytesIO
 
 import main
 
@@ -116,6 +118,27 @@ def test_search_page_asks_for_one_hundred_records(monkeypatch):
     assert "size=100" in captured["url"]
     assert "page=2" in captured["url"]
     assert "openTopics" in captured["url"]
+    assert "null" not in captured["url"]
+    assert "searchText" not in captured["url"]
+
+
+def test_http_403_message_explains_akamai_block():
+    body = (
+        b"<H1>Access Denied</H1>\n"
+        b"Reference&#32;&#35;18.14fb1060.1793750985.459c4c3b\n"
+    )
+    exc = urllib.error.HTTPError(
+        "https://www.dodsbirsttr.mil/topics/api/public/topics/search?x=1",
+        403,
+        "Forbidden",
+        None,
+        BytesIO(body),
+    )
+    message = main._http_error_message(exc, exc.filename)
+    assert "HTTP 403" in message
+    assert "Akamai" in message
+    assert "18.14fb1060.1793750985.459c4c3b" in message
+    assert "?" not in message.split("for ", 1)[-1].split(".", 1)[0]
 
 
 def test_fetch_all_topics_continues_after_a_short_page(monkeypatch):
@@ -297,11 +320,11 @@ def test_default_workers_is_bounded(monkeypatch):
     monkeypatch.setattr(main.os, "cpu_count", lambda: 1)
     assert main.default_workers() == 5
     monkeypatch.setattr(main.os, "cpu_count", lambda: None)
-    assert main.default_workers() == 20
+    assert main.default_workers() == 8
     monkeypatch.setattr(main.os, "cpu_count", lambda: 100)
-    assert main.default_workers() == 64
+    assert main.default_workers() == 8
     monkeypatch.setattr(main.os, "cpu_count", lambda: 8)
-    assert main.default_workers() == 40
+    assert main.default_workers() == 8
 
 
 def test_read_exactly_handles_short_reads():

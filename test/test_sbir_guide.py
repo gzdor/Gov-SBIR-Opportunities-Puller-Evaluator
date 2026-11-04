@@ -17,6 +17,14 @@ def test_guide_covers_process_without_copying_consultant_marketing():
     assert "Release 2" in text
 
 
+def test_guide_section_titles_cover_the_process():
+    titles = sbir_guide.section_titles()
+    assert "Who can propose" in titles
+    assert "Direct to Phase II vs Phase I" in titles
+    assert "FY27 monthly calendar (snapshot, not a scrape)" in titles
+    assert titles[0] == "What this tab is"
+
+
 def test_guide_lists_official_links_before_third_party():
     urls = [url for _label, url in sbir_guide.LINKS]
     assert urls[0].startswith("https://www.dodsbirsttr.mil/")
