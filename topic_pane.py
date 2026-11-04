@@ -95,15 +95,28 @@ class TopicPaneMixin:
             areas = ", ".join(str(item) for item in (row.get("technologyAreas") or []) if item) or areas
             if analyze.itar_flag(row.get("itar")):
                 itar = "yes"
+        overview = str(row.get("overviewParagraph") or "").strip()
+        topic_title = str(row.get("title") or "")
+        cached_ok = bool(overview) and overview not in {"—", topic_title}
         pdf_text = ""
         pdf_name = str(row.get("pdf") or "")
-        if self.output_dir and pdf_name and pdf_name not in {"Failed", "—"}:
-            path = analyze.resolve_pdf(self.output_dir, pdf_name)
-            if path is not None:
-                pdf_text = analyze.extract_pdf_text(path)
-        analyze.refresh_volume_page_limits(row, self.output_dir, topic_text=pdf_text)
-        overview = analyze.topic_overview_paragraph(row, pdf_text=pdf_text, details=details)
-        row["overviewParagraph"] = overview
+        if not cached_ok:
+            if self.output_dir and pdf_name and pdf_name not in {"Failed", "—"}:
+                path = analyze.resolve_pdf(self.output_dir, pdf_name)
+                if path is not None:
+                    pdf_text = analyze.extract_pdf_text(path)
+            analyze.refresh_volume_page_limits(
+                row, self.output_dir, topic_text=pdf_text, include_topic_pdf=False
+            )
+            overview = analyze.topic_overview_paragraph(
+                row, pdf_text=pdf_text, details=details
+            )
+            row["overviewParagraph"] = overview
+        elif details:
+            overview = analyze.topic_overview_paragraph(
+                row, pdf_text="", details=details
+            ) or overview
+            row["overviewParagraph"] = overview
         problem = str(row.get("problem") or row.get("overview") or "").strip()
         extra_problem = ""
         if (

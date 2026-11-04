@@ -15,6 +15,39 @@ def test_pypdf_backend_is_importable():
     assert analyze.ensure_pypdf(install=False) is True
 
 
+def test_refresh_volume_page_limits_can_skip_topic_pdf(tmp_path, monkeypatch):
+    called = {"n": 0}
+
+    def boom(*_args, **_kwargs):
+        called["n"] += 1
+        return "should not run"
+
+    monkeypatch.setattr(analyze, "extract_pdf_text", boom)
+    row = {
+        "code": "DAF01",
+        "client": "USAF",
+        "pdf": "topic.pdf",
+        "techVolLimit": "",
+        "feasStudyLimit": "",
+    }
+    (tmp_path / "topic.pdf").write_bytes(b"%PDF-1.4\n")
+    analyze.refresh_volume_page_limits(row, tmp_path, include_topic_pdf=False)
+    assert called["n"] == 0
+
+
+def test_quiet_pypdf_loggers_hide_startxref(tmp_path, capsys):
+    import logging
+
+    analyze.quiet_pypdf_loggers()
+    assert logging.getLogger("pypdf").level >= logging.ERROR
+    dest = tmp_path / "broken.pdf"
+    dest.write_bytes(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj\nstartxref\n99999\n%%EOF\n")
+    analyze.extract_pdf_text(dest)
+    err = capsys.readouterr().err.lower()
+    assert "startxref" not in err
+    assert "object stream" not in err
+
+
 def test_empty_phrase_keeps_every_topic():
     topics = [
         {"topicCode": "A", "topicTitle": "Laser", "component": "NAVY"},

@@ -141,6 +141,13 @@ class CatalogTableMixin:
         self._clear_table()
         if self.output_dir is None:
             return
+        folder_changed = self.output_dir != getattr(self, "_page_limit_dir", None)
+        if folder_changed:
+            # Drop in-flight instruction-PDF scans so a previous snapshot cannot
+            # stamp its page limits onto this one by topicId.
+            self._page_limit_gen += 1
+            self._page_limit_dir = self.output_dir
+        self._cancel_pending_table_refresh()
         manifest_path = self.output_dir / "manifest.json"
         if not manifest_path.is_file():
             self.bluf_caption_var.set("No manifest.json — BLUF table is empty.")
@@ -151,7 +158,7 @@ class CatalogTableMixin:
             self.bluf_caption_var.set("Could not read manifest.json.")
             return
         rows = payload.get("bluf") or [
-            analyze.bluf_row(topic, self.output_dir)
+            analyze.bluf_row(topic, None)
             for topic in payload.get("topics") or []
         ]
         self._commit_note()
@@ -160,14 +167,13 @@ class CatalogTableMixin:
         self._topics_for_diff = payload.get("topics") or []
         for row in self._bluf_rows:
             analyze.refresh_due_in(row)
-            analyze.refresh_volume_page_limits(row, self.output_dir)
             self._stamp_triage(row)
-        stated = sum(1 for row in self._bluf_rows if row.get("techVolLimit"))
-        self._append_log(
-            f"Page limits from instruction PDFs: {stated}/{len(self._bluf_rows)} topics stated."
-        )
         self._fill_tech_areas()
         self._render_table()
+        if not self.interactive:
+            self._refresh_all_page_limits(force=False)
+        elif folder_changed and getattr(self, "_first_paint_done", False):
+            self._refresh_all_page_limits(force=False)
         if selected_key:
             rebound = next(
                 (row for row in self._bluf_rows if self._triage_key(row) == selected_key),

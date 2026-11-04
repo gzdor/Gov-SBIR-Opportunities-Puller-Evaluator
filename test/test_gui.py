@@ -136,6 +136,107 @@ def test_queue_reporter_emits_expected_events():
     assert drained[6][0] == "item_done"
 
 
+def test_gui_poll_events_yields_after_a_batch():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        for index in range(gui._EVENT_BATCH + 9):
+            app.events.put(("status", f"n{index}"))
+        app._poll_events()
+        text = app.log.get("1.0", "end")
+        assert "n0" in text
+        assert f"n{gui._EVENT_BATCH}" not in text
+        assert not app.events.empty()
+    finally:
+        root.destroy()
+
+
+def test_gui_item_done_does_not_reparse_pdf(monkeypatch):
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        topic = {
+            "topicId": "t0",
+            "topicCode": "DAF01",
+            "topicTitle": "Illumination",
+            "topicStatus": "Open",
+            "component": "USAF",
+            "program": "SBIR",
+            "pdf": "topic_t0.pdf",
+            "pdfStatus": "pending",
+        }
+        app._handle_event(("catalog_ready", [topic]))
+
+        def boom(*_args, **_kwargs):
+            raise AssertionError("item_done must not parse PDFs on the Tk thread")
+
+        monkeypatch.setattr(analyze, "bluf_row", boom)
+        monkeypatch.setattr(analyze, "extract_pdf_text", boom)
+        monkeypatch.setattr(analyze, "refresh_volume_page_limits", boom)
+        app._handle_event(
+            (
+                "item_done",
+                {
+                    "label": "topic PDF",
+                    "key": "t0",
+                    "outcome": {"status": "downloaded", "error": None},
+                },
+            )
+        )
+        assert app._bluf_rows[0]["pdfStatus"] == "downloaded"
+        assert app._bluf_rows[0]["pdf"] == "topic_t0.pdf"
+    finally:
+        root.destroy()
+
+
+def test_gui_restore_skips_pypdf_when_manifest_has_stated_limits(tmp_path, monkeypatch):
+    snap = tmp_path / "all_dsip_opportunities_20261104_120000"
+    snap.mkdir()
+    (snap / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [{"topicId": "t0", "topicCode": "DAF01", "topicTitle": "Air"}],
+                "bluf": [
+                    {
+                        "topicId": "t0",
+                        "code": "DAF01",
+                        "title": "Air",
+                        "client": "USAF",
+                        "program": "SBIR",
+                        "status": "Open",
+                        "techVolLimit": "5 (stated)",
+                        "feasStudyLimit": "5 (stated)",
+                        "overviewParagraph": "Build a radio from the details JSON.",
+                        "pdf": "topic.pdf",
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    gui.STATE_FILE.write_text(
+        json.dumps({"parent": str(tmp_path), "last_output": str(snap)}),
+        encoding="utf-8",
+    )
+
+    def boom(*_args, **_kwargs):
+        raise AssertionError("restore must not parse PDFs on the Tk thread")
+
+    monkeypatch.setattr(analyze, "extract_pdf_text", boom)
+    monkeypatch.setattr(analyze, "refresh_volume_page_limits", boom)
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=True)
+        root.update()
+        assert len(app.table.get_children()) == 1
+        assert _row_values(app)["techVolLimit"] == "5 (stated)"
+        app._show_detail(app._bluf_rows[0])
+        body = app.detail_text.get("1.0", "end")
+        assert "Build a radio" in body
+    finally:
+        root.destroy()
+
+
 def test_gui_download_button_runs_full_flow(tmp_path, monkeypatch):
     shared = {
         "baaPrefaceUploadId": 555,
@@ -1031,5 +1132,167 @@ def test_gui_render_keeps_selection_and_hides_zero_components():
         app._refresh_chip_labels()
         root.update()
         assert app._dept_checks["NASA"].grid_info()
+    finally:
+        root.destroy()
+
+
+def test_gui_pipeline_survives_collapse_and_empty_chips_reflow():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app._bluf_rows = [
+            _bluf("t0", "DAF01", "Air", client="USAF"),
+            _bluf("t1", "NAV01", "Sea", client="NAVY"),
+            _bluf("t2", "MDA01", "Shield", client="MDA"),
+        ]
+        app._render_table()
+        root.update()
+        for index, name in enumerate(gui.CALL_FILTERS):
+            info = app._pipe_btns[name].grid_info()
+            assert info, name
+            assert int(info["row"]) == 0
+            assert int(info["column"]) == index
+        assert "All 3" in app._pipe_btns["All calls"].cget("text")
+        assert "Untagged" in app._pipe_btns["Untagged"].cget("text")
+        # Hidden components must not leave holes that slide NSF onto Calls.
+        assert int(app._dept_checks["DAF"].grid_info()["column"]) == 0
+        assert int(app._dept_checks["Navy"].grid_info()["column"]) == 1
+        assert int(app._dept_checks["MDA"].grid_info()["column"]) == 2
+        assert app._dept_checks["NASA"].grid_info() == {}
+        assert app._dept_checks["NSF"].grid_info() == {}
+        app._set_chrome_collapsed(True)
+        root.update()
+        assert app.setup_frame.grid_info() == {}
+        assert app.log_frame.grid_info() == {}
+        assert app._pipe_frame.grid_info()
+        assert app._chips_frame.grid_info()
+        for name in gui.CALL_FILTERS:
+            assert app._pipe_btns[name].grid_info(), name
+        app._set_call_filter("Pursue")
+        root.update()
+        assert app._pipe_btns["Pursue"].cget("style") == "CallOn.TButton"
+        assert app._pipe_btns["All calls"].cget("style") == "Call.TButton"
+    finally:
+        root.destroy()
+
+
+def test_gui_page_limits_rebind_selected_topic():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        row = _bluf("t0", "DAF01", "Air", client="USAF")
+        app._bluf_rows = [row]
+        app._render_table()
+        app._show_detail(dict(row))
+        root.update()
+        assert "2 (stated)" not in app.detail_text.get("1.0", "end")
+        app._page_limit_gen = 1
+        app._apply_page_limits_ready(
+            1,
+            [
+                {
+                    "topicId": "t0",
+                    "techVolLimit": "2 (stated)",
+                    "feasStudyLimit": "15 (stated)",
+                }
+            ],
+        )
+        root.update()
+        text = app.detail_text.get("1.0", "end")
+        assert "2 (stated)" in text
+        assert "15 (stated)" in text
+        assert app._selected_row is app._bluf_rows[0]
+    finally:
+        root.destroy()
+
+
+def _write_limit_snapshot(parent: Path, name: str, limit: str) -> Path:
+    snap = parent / name
+    snap.mkdir()
+    (snap / "manifest.json").write_text(
+        json.dumps(
+            {
+                "bluf": [
+                    {
+                        "topicId": "shared",
+                        "code": "DAF01",
+                        "title": "Air",
+                        "client": "USAF",
+                        "program": "SBIR",
+                        "status": "Open",
+                        "techVolLimit": limit,
+                        "feasStudyLimit": limit,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    return snap
+
+
+def test_gui_snapshot_switch_drops_stale_page_limits(tmp_path):
+    older = _write_limit_snapshot(
+        tmp_path, "all_dsip_opportunities_20261101_000000", "5 (stated)"
+    )
+    newer = _write_limit_snapshot(
+        tmp_path, "all_dsip_opportunities_20261102_000000", "15 (stated)"
+    )
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=True)
+        app.folder_var.set(str(tmp_path))
+        app._first_paint_done = True
+        assert app._load_snapshot(older)
+        root.update()
+        stale_gen = app._page_limit_gen
+        assert app._bluf_rows[0]["techVolLimit"] == "5 (stated)"
+        assert app._load_snapshot(newer)
+        root.update()
+        assert app._page_limit_gen != stale_gen
+        assert app._bluf_rows[0]["techVolLimit"] == "15 (stated)"
+        app._apply_page_limits_ready(
+            stale_gen,
+            [
+                {
+                    "topicId": "shared",
+                    "techVolLimit": "99 (stated)",
+                    "feasStudyLimit": "99 (stated)",
+                }
+            ],
+            older,
+        )
+        assert app._bluf_rows[0]["techVolLimit"] == "15 (stated)"
+        assert _row_values(app)["techVolLimit"] == "15 (stated)"
+    finally:
+        root.destroy()
+
+
+def test_gui_interactive_snapshot_load_starts_page_limit_pass(tmp_path, monkeypatch):
+    snap = _write_limit_snapshot(
+        tmp_path, "all_dsip_opportunities_20261103_000000", ""
+    )
+    seen: list[str] = []
+
+    def fake_refresh(row, *_args, **_kwargs):
+        seen.append(str(row.get("topicId") or ""))
+        row["techVolLimit"] = "7 (stated)"
+        row["feasStudyLimit"] = "7 (stated)"
+
+    monkeypatch.setattr(analyze, "refresh_volume_page_limits", fake_refresh)
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=True)
+        app._first_paint_done = True
+        assert app._load_snapshot(snap)
+        thread = app._page_limit_thread
+        assert thread is not None
+        thread.join(timeout=2)
+        assert not thread.is_alive()
+        app._poll_events()
+        root.update()
+        assert seen
+        assert app._bluf_rows[0]["techVolLimit"] == "7 (stated)"
+        assert _row_values(app)["techVolLimit"] == "7 (stated)"
     finally:
         root.destroy()

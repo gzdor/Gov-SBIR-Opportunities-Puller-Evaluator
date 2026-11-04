@@ -16,6 +16,9 @@ import threading
 import traceback
 from pathlib import Path
 
+# Keep the Tk loop alive while workers flood item_done / advance events.
+_EVENT_BATCH = 12
+
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
@@ -134,10 +137,17 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self._hidden_columns: set[str] = set(DEFAULT_HIDDEN_COLUMNS)
         self._pdf_done = 0
         self._pdf_total = 0
+        self._page_limit_gen = 0
+        self._page_limit_thread: threading.Thread | None = None
+        self._page_limit_dir: Path | None = None
+        self._first_paint_done = False
+        self._pump_armed = False
+        self._table_refresh_after: str | None = None
         self._chip_vars: dict[str, tk.BooleanVar] = {
             key: tk.BooleanVar(value=False) for _, key in CHIP_SPECS
         }
 
+        analyze.quiet_pypdf_loggers()
         self._build_widgets()
         self._bind_zoom()
         self._bind_shortcuts()
@@ -145,7 +155,6 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self.table_filter_var.trace_add("write", lambda *_: self._on_filter_change())
         self.call_filter_var.trace_add("write", lambda *_: self._on_filter_change())
         self.tech_area_var.trace_add("write", lambda *_: self._on_filter_change())
-        self._ensure_pdf_backend()
         self._restore_state()
         if self.interactive and not self._zoom_from_state:
             self._set_zoom(theme.display_zoom())
@@ -154,6 +163,10 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self._refresh_snapshot_list()
         self._refresh_header_status()
         self._update_empty_state()
+        if self.interactive:
+            self.root.after_idle(self._after_first_paint)
+        else:
+            self._ensure_pdf_backend()
 
     def _build_widgets(self) -> None:
         pad = {"padx": 10, "pady": 6}
@@ -220,6 +233,8 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self.phase_var.set("Starting catalog scan…")
         self._pdf_done = 0
         self._pdf_total = 0
+        self._page_limit_gen += 1
+        self._page_limit_dir = self.output_dir
         self._refresh_header_status()
         self.progress.configure(mode="indeterminate")
         self.progress.start(12)
@@ -233,7 +248,7 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
             daemon=True,
         )
         self.worker.start()
-        self._poll_events()
+        self._arm_event_pump()
 
     def _run_download(
         self, output_dir: Path, reporter: QueueReporter, phrase: str
@@ -246,25 +261,46 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
             self.events.put(("status", traceback.format_exc()))
             self.events.put(("finished", 1))
 
-    def _poll_events(self) -> None:
+    def _after_first_paint(self) -> None:
+        """Run after the window exists so restore cannot block first paint."""
+        self._first_paint_done = True
+        self._ensure_pdf_backend()
+        self._refresh_all_page_limits(force=False)
+
+    def _cancel_pending_table_refresh(self) -> None:
+        after_id = self._table_refresh_after
+        if after_id is None:
+            return
         try:
-            while True:
+            self.root.after_cancel(after_id)
+        except tk.TclError:
+            pass
+        self._table_refresh_after = None
+
+    def _arm_event_pump(self) -> None:
+        if self._pump_armed:
+            return
+        self._pump_armed = True
+        self._poll_events()
+
+    def _poll_events(self) -> None:
+        processed = 0
+        try:
+            while processed < _EVENT_BATCH:
                 event = self.events.get_nowait()
                 self._handle_event(event)
+                processed += 1
         except queue.Empty:
             pass
-        if self.worker and self.worker.is_alive():
-            self.root.after(100, self._poll_events)
+        alive = bool(self.worker and self.worker.is_alive())
+        bg = bool(
+            self._page_limit_thread is not None and self._page_limit_thread.is_alive()
+        )
+        pending = processed >= _EVENT_BATCH or not self.events.empty()
+        if alive or pending or bg:
+            self.root.after(1 if pending else 50, self._poll_events)
         else:
-            # Drain anything left after the thread ended.
-            self._drain_remaining()
-
-    def _drain_remaining(self) -> None:
-        try:
-            while True:
-                self._handle_event(self.events.get_nowait())
-        except queue.Empty:
-            pass
+            self._pump_armed = False
 
     def _handle_event(self, event: tuple) -> None:
         kind = event[0]
@@ -295,19 +331,21 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
                 self._append_log(info["failure"])
         elif kind == "end_phase":
             if getattr(self, "_phase_label", "") == "solicitation PDF":
-                self._refresh_all_page_limits()
+                self._refresh_all_page_limits(force=True)
         elif kind == "catalog_ready":
             self._apply_catalog(event[1])
         elif kind == "item_done":
             self._apply_item_done(event[1])
+        elif kind == "page_limits_ready":
+            folder = event[3] if len(event) > 3 else None
+            self._apply_page_limits_ready(event[1], event[2], folder)
         elif kind == "finished":
             self._on_finished(event[1])
 
     def _apply_catalog(self, topics: list[dict]) -> None:
         self._topics_for_diff = list(topics)
-        self._bluf_rows = [
-            analyze.bluf_row(topic, self.output_dir) for topic in topics
-        ]
+        # output_dir=None: catalog JSON only. Do not open PDFs on the Tk thread.
+        self._bluf_rows = [analyze.bluf_row(topic, None) for topic in topics]
         for row, topic in zip(self._bluf_rows, self._topics_for_diff):
             row["pdf"] = topic.get("pdf") or ""
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
@@ -339,22 +377,149 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self._commit_note()
         for index, row in enumerate(self._bluf_rows):
             if str(row.get("topicId")) == key:
-                refreshed = analyze.bluf_row(topic, self.output_dir)
+                # Stamp path/status only. Full pypdf BLUF waits for the
+                # worker-side manifest / a later page-limit pass so the
+                # Tk thread is not stuck in startxref recovery.
+                refreshed = dict(row)
+                refreshed["pdf"] = topic.get("pdf") or row.get("pdf") or ""
                 refreshed["pdfStatus"] = topic.get("pdfStatus") or ""
                 self._stamp_triage(refreshed)
                 self._bluf_rows[index] = refreshed
                 break
+        self._schedule_table_refresh()
+
+    def _schedule_table_refresh(self) -> None:
+        if not self.interactive:
+            self._flush_table_refresh()
+            return
+        if self._table_refresh_after is not None:
+            return
+        self._table_refresh_after = self.root.after(120, self._flush_table_refresh)
+
+    def _flush_table_refresh(self) -> None:
+        self._table_refresh_after = None
         self._render_table()
         self._rebind_selected()
         self._refresh_caption(pending=True)
 
-    def _refresh_all_page_limits(self) -> None:
-        """Fill tech-vol / feasibility cells from instruction PDFs already on disk."""
-        if self.output_dir is None:
-            return
+    def _page_limits_need_refresh(self) -> bool:
+        if not self._bluf_rows or self.output_dir is None:
+            return False
+        has_stated = False
         for row in self._bluf_rows:
-            analyze.refresh_volume_page_limits(row, self.output_dir)
-        self._render_table()
+            tech = str(row.get("techVolLimit") or "")
+            feas = str(row.get("feasStudyLimit") or "")
+            if "typical" in tech.lower() or "typical" in feas.lower():
+                return True
+            if "(stated)" in tech or "(stated)" in feas:
+                has_stated = True
+        return not has_stated
+
+    def _refresh_all_page_limits(self, force: bool = False) -> None:
+        """Fill tech-vol / feasibility cells from instruction PDFs.
+
+        Interactive: background thread, Tk only applies the result.
+        Tests (interactive=False): run synchronously.
+        """
+        if self.output_dir is None or not self._bluf_rows:
+            return
+        if not force and not self._page_limits_need_refresh():
+            return
+        if not self.interactive:
+            self._page_limit_dir = self.output_dir
+            for row in self._bluf_rows:
+                analyze.refresh_volume_page_limits(
+                    row, self.output_dir, include_topic_pdf=False
+                )
+            stated = sum(1 for row in self._bluf_rows if row.get("techVolLimit"))
+            self._append_log(
+                f"Page limits from instruction PDFs: {stated}/{len(self._bluf_rows)} topics stated."
+            )
+            self._render_table()
+            return
+        self._page_limit_gen += 1
+        gen = self._page_limit_gen
+        output_dir = self.output_dir
+        self._page_limit_dir = output_dir
+        snapshots = [
+            {
+                "topicId": row.get("topicId"),
+                "code": row.get("code"),
+                "topicCode": row.get("code"),
+                "component": row.get("component"),
+                "client": row.get("client"),
+                "instructionPdfs": list(row.get("instructionPdfs") or []),
+                "solicitationDocuments": list(row.get("solicitationDocuments") or []),
+                "contract": row.get("contract") or "",
+                "pdf": "",
+                "techVolLimit": "",
+                "feasStudyLimit": "",
+            }
+            for row in self._bluf_rows
+        ]
+
+        def work() -> None:
+            updates = []
+            try:
+                for snap in snapshots:
+                    if gen != self._page_limit_gen:
+                        return
+                    analyze.refresh_volume_page_limits(
+                        snap, output_dir, include_topic_pdf=False
+                    )
+                    updates.append(
+                        {
+                            "topicId": snap.get("topicId"),
+                            "techVolLimit": snap.get("techVolLimit") or "",
+                            "feasStudyLimit": snap.get("feasStudyLimit") or "",
+                            "instructionPdfs": list(snap.get("instructionPdfs") or []),
+                        }
+                    )
+                if gen != self._page_limit_gen:
+                    return
+                self.events.put(("page_limits_ready", gen, updates, output_dir))
+            except Exception as exc:  # noqa: BLE001 - surface worker crash in the log
+                self.events.put(("status", f"Page limit scan failed: {exc}"))
+
+        self._page_limit_thread = threading.Thread(target=work, daemon=True)
+        self._page_limit_thread.start()
+        self._arm_event_pump()
+
+    def _apply_page_limits_ready(
+        self,
+        gen: int,
+        updates: list[dict],
+        folder: Path | None = None,
+    ) -> None:
+        if gen != self._page_limit_gen:
+            return
+        if folder is not None and self.output_dir != folder:
+            return
+        by_id = {str(row.get("topicId") or ""): row for row in self._bluf_rows}
+        limit_i = self._columns.index("techVolLimit") if "techVolLimit" in self._columns else -1
+        feas_i = self._columns.index("feasStudyLimit") if "feasStudyLimit" in self._columns else -1
+        stated = 0
+        for item in updates:
+            row = by_id.get(str(item.get("topicId") or ""))
+            if row is None:
+                continue
+            row["techVolLimit"] = item.get("techVolLimit") or ""
+            row["feasStudyLimit"] = item.get("feasStudyLimit") or ""
+            if item.get("instructionPdfs"):
+                row["instructionPdfs"] = item["instructionPdfs"]
+            if row["techVolLimit"]:
+                stated += 1
+            iid = str(row.get("topicId") or "")
+            if iid and self.table.exists(iid) and limit_i >= 0:
+                values = list(self.table.item(iid, "values"))
+                if limit_i < len(values):
+                    values[limit_i] = row["techVolLimit"] or ""
+                if feas_i >= 0 and feas_i < len(values):
+                    values[feas_i] = row["feasStudyLimit"] or ""
+                self.table.item(iid, values=values)
+        self._append_log(
+            f"Page limits from instruction PDFs: {stated}/{len(self._bluf_rows)} topics stated."
+        )
         self._rebind_selected()
 
     def _on_finished(self, code: int) -> None:

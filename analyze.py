@@ -9,11 +9,13 @@ inside the run's output directory.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import os
 import re
 import subprocess
 import sys
+import warnings
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
@@ -480,6 +482,12 @@ def _pdf_reader_class():
         return PdfReader
 
 
+def quiet_pypdf_loggers() -> None:
+    """Hide startxref / object-stream recovery chatter on stderr."""
+    for name in ("pypdf", "pypdf._reader", "pypdf.generic", "PyPDF2"):
+        logging.getLogger(name).setLevel(logging.ERROR)
+
+
 def extract_pdf_text(
     path: Path,
     max_bytes: int | None = None,
@@ -510,14 +518,22 @@ def extract_pdf_text(
         return ""
 
 
-@lru_cache(maxsize=48)
+@lru_cache(maxsize=256)
 def _extract_pdf_text_cached(
     resolved: str, size: int, mtime: int, max_bytes: int, max_pages: int
 ) -> str:
     del size, mtime, max_bytes  # identity for cache invalidation only
-    reader = _pdf_reader_class()(resolved, strict=False)
-    chunks = [page.extract_text() or "" for page in reader.pages[:max_pages]]
-    return "\n".join(chunks)
+    quiet_pypdf_loggers()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        reader = _pdf_reader_class()(resolved, strict=False)
+        chunks = []
+        for page in reader.pages[:max_pages]:
+            try:
+                chunks.append(page.extract_text() or "")
+            except Exception:
+                continue
+        return "\n".join(chunks)
 
 
 _SECTION_STOP = re.compile(
@@ -1146,7 +1162,11 @@ def instruction_pdf_text(
 
 
 def refresh_volume_page_limits(
-    row: dict, output_dir: Path | None, topic_text: str = ""
+    row: dict,
+    output_dir: Path | None,
+    topic_text: str = "",
+    *,
+    include_topic_pdf: bool = True,
 ) -> dict:
     """Overwrite page-limit fields from local instruction PDFs. Never keeps typicals."""
     if output_dir is None and not topic_text:
@@ -1174,7 +1194,13 @@ def refresh_volume_page_limits(
             row["instructionPdfs"] = rels
     pdf_text = topic_text
     pdf_name = str(row.get("pdf") or "")
-    if not pdf_text and output_dir and pdf_name and pdf_name not in {"Failed", "—"}:
+    if (
+        include_topic_pdf
+        and not pdf_text
+        and output_dir
+        and pdf_name
+        and pdf_name not in {"Failed", "—"}
+    ):
         path = resolve_pdf(output_dir, pdf_name)
         if path is not None:
             pdf_text = extract_pdf_text(path)

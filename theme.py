@@ -107,6 +107,16 @@ def apply_zoom(
         font=(_FONT, ui, "bold"),
         padding=max(6, int(8 * scale)),
     )
+    style.configure(
+        "Call.TButton",
+        font=(_FONT, ui),
+        padding=(max(8, int(10 * scale)), max(3, int(4 * scale))),
+    )
+    style.configure(
+        "CallOn.TButton",
+        font=(_FONT, ui, "bold"),
+        padding=(max(8, int(10 * scale)), max(3, int(4 * scale))),
+    )
     style.configure("TEntry", font=(_FONT, ui))
     row_h = DENSITY_ROW.get(density, 26)
     style.configure(
@@ -181,6 +191,17 @@ def apply_dark_theme(root: tk.Tk) -> ttk.Style:
         background=HEAD,
         foreground=FG,
         padding=(10, 4),
+    )
+    style.configure(
+        "CallOn.TButton",
+        background=ACCENT,
+        foreground="#0b1a12",
+        padding=(10, 4),
+        font=("Segoe UI", 10, "bold"),
+    )
+    style.map(
+        "CallOn.TButton",
+        background=[("active", "#5ef0ad")],
     )
     style.configure("TEntry", fieldbackground=FIELD, foreground=FG, insertcolor=FG)
     style.map(

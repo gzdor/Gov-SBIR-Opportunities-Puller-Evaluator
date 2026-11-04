@@ -147,27 +147,32 @@ class ChromeMixin:
         self.log.tag_configure("fail", foreground=theme.FAIL)
 
     def _build_pipeline_and_chips(self, frame: ttk.Frame) -> None:
-        pipe = ttk.Frame(frame)
+        frame.rowconfigure(6, minsize=40)
+        frame.rowconfigure(7, minsize=96)
+        pipe = ttk.LabelFrame(frame, text="Pipeline", padding=(8, 4))
         pipe.grid(row=6, column=0, columnspan=3, sticky="ew", padx=10, pady=(4, 2))
-        ttk.Label(pipe, text="Pipeline:", style="Hint.TLabel").pack(side="left", padx=(0, 8))
+        self._pipe_frame = pipe
         self._pipe_btns: dict[str, ttk.Button] = {}
-        for label in CALL_FILTERS:
+        for index, label in enumerate(CALL_FILTERS):
+            pipe.columnconfigure(index, weight=1, uniform="pipe")
             btn = ttk.Button(
                 pipe,
                 text=label,
                 style="Call.TButton",
                 command=lambda name=label: self._set_call_filter(name),
             )
-            btn.pack(side="left", padx=2)
+            btn.grid(row=0, column=index, sticky="ew", padx=2)
             self._pipe_btns[label] = btn
 
-        chips = ttk.Frame(frame)
+        chips = ttk.LabelFrame(frame, text="Filters", padding=(8, 4))
         chips.grid(row=7, column=0, columnspan=3, sticky="ew", padx=10, pady=(0, 2))
+        chips.columnconfigure(1, weight=1)
+        self._chips_frame = chips
         ttk.Label(chips, text="Component:", style="Hint.TLabel").grid(
             row=0, column=0, sticky="nw"
         )
         dept = ttk.Frame(chips)
-        dept.grid(row=0, column=1, columnspan=12, sticky="w")
+        dept.grid(row=0, column=1, sticky="ew")
         self._dept_frame = dept
         for index, (label, key) in enumerate(DEPARTMENT_CHIPS):
             button = self._make_pill(dept, label, self._chip_vars[key], self._on_chips)
@@ -178,42 +183,45 @@ class ChromeMixin:
             text="Show empty",
             variable=self.show_zero_components,
             command=self._refresh_chip_labels,
-        ).grid(row=0, column=13, sticky="e")
+        ).grid(row=0, column=2, sticky="e", padx=(8, 0))
         ttk.Label(chips, text="Narrow:", style="Hint.TLabel").grid(
-            row=1, column=0, sticky="w", pady=(4, 0)
+            row=1, column=0, sticky="nw", pady=(4, 0)
         )
         work = ttk.Frame(chips)
-        work.grid(row=1, column=1, columnspan=12, sticky="w", pady=(4, 0))
+        work.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(4, 0))
+        self._work_frame = work
         self._work_checks: dict[str, tk.Widget] = {}
         for index, (label, key) in enumerate(WORKFLOW_CHIPS):
             button = self._make_pill(work, label, self._chip_vars[key], self._on_chips)
             button.grid(row=index // 8, column=index % 8, sticky="w", padx=3, pady=2)
             self._work_checks[key] = button
         ttk.Label(chips, text="Calls:").grid(row=2, column=0, sticky="w", pady=(4, 0))
+        calls = ttk.Frame(chips)
+        calls.grid(row=2, column=1, columnspan=2, sticky="w", pady=(4, 0))
         self.call_filter = ttk.Combobox(
-            chips,
+            calls,
             textvariable=self.call_filter_var,
             values=CALL_FILTERS,
             state="readonly",
             width=12,
         )
-        self.call_filter.grid(row=2, column=1, sticky="w", padx=6, pady=(4, 0))
-        ttk.Label(chips, text="Tech area:").grid(
-            row=2, column=2, sticky="w", padx=(12, 0), pady=(4, 0)
+        self.call_filter.grid(row=0, column=0, sticky="w")
+        ttk.Label(calls, text="Tech area:").grid(
+            row=0, column=1, sticky="w", padx=(12, 0)
         )
         self.tech_area_filter = ttk.Combobox(
-            chips,
+            calls,
             textvariable=self.tech_area_var,
             values=("All tech areas",),
             state="readonly",
             width=22,
         )
-        self.tech_area_filter.grid(row=2, column=3, sticky="w", padx=6, pady=(4, 0))
+        self.tech_area_filter.grid(row=0, column=2, sticky="w", padx=6)
         ttk.Label(
-            chips,
+            calls,
             text="1 Pursue · 2 Watch · 3 Pass · 0 clear   (table focused)",
             style="Hint.TLabel",
-        ).grid(row=2, column=4, columnspan=8, sticky="w", pady=(4, 0))
+        ).grid(row=0, column=3, sticky="w", padx=(12, 0))
 
     def _build_find_toolbar(self, frame: ttk.Frame) -> None:
         ttk.Label(frame, textvariable=self.bluf_caption_var).grid(
@@ -501,6 +509,15 @@ class ChromeMixin:
             self.setup_frame.grid()
             self.log_frame.grid()
             self.settings_btn.configure(text="Hide settings")
+        # Pipeline/filters stay mapped in both views; re-grid so collapse cannot
+        # leave them unmapped under the table or overlapping each other.
+        pipe = getattr(self, "_pipe_frame", None)
+        if pipe is not None:
+            pipe.grid()
+        chips = getattr(self, "_chips_frame", None)
+        if chips is not None:
+            chips.grid()
+        self._refresh_pipeline()
 
     def _refresh_chip_labels(self) -> None:
         counts = {key: 0 for _, key in CHIP_SPECS}
@@ -530,28 +547,42 @@ class ChromeMixin:
             if self._row_in_diff(row, self._diff_changed):
                 counts["__changed__"] += 1
         show_zero = bool(self.show_zero_components.get())
-        for label, key in DEPARTMENT_CHIPS:
-            button = self._dept_checks.get(key)
-            if button is None:
-                continue
-            n = counts[key]
-            button.configure(text=f"{label} ({n})")
-            if (
-                self._bluf_rows
-                and n == 0
-                and not show_zero
-                and not self._chip_vars[key].get()
-            ):
-                button.grid_remove()
-            else:
-                button.grid()
-        for label, key in WORKFLOW_CHIPS:
-            button = getattr(self, "_work_checks", {}).get(key)
-            if button is None:
-                continue
-            button.configure(text=f"{label} ({counts[key]})")
+        self._reflow_pills(
+            DEPARTMENT_CHIPS,
+            self._dept_checks,
+            counts,
+            hide_empty=bool(self._bluf_rows) and not show_zero,
+        )
+        self._reflow_pills(WORKFLOW_CHIPS, getattr(self, "_work_checks", {}), counts)
         self._style_pills()
         self._refresh_pipeline()
+
+    def _reflow_pills(
+        self,
+        specs: tuple,
+        widgets: dict,
+        counts: dict[str, int],
+        hide_empty: bool = False,
+        per_row: int = 8,
+    ) -> None:
+        """Place visible pills left-to-right so hidden ones cannot leave holes."""
+        col = 0
+        row = 0
+        for label, key in specs:
+            button = widgets.get(key)
+            if button is None:
+                continue
+            n = counts.get(key, 0)
+            button.configure(text=f"{label} ({n})")
+            hidden = hide_empty and n == 0 and not self._chip_vars[key].get()
+            button.grid_forget()
+            if hidden:
+                continue
+            button.grid(row=row, column=col, sticky="w", padx=3, pady=2)
+            col += 1
+            if col >= per_row:
+                col = 0
+                row += 1
 
     def _refresh_pipeline(self) -> None:
         summary = analyze.pipeline_summary(self._bluf_rows)
@@ -562,8 +593,13 @@ class ChromeMixin:
             "Pass": f"Pass {summary.get('pass', 0)}",
             "Untagged": f"Untagged {summary.get('untagged', 0)}",
         }
+        current = self.call_filter_var.get() or "All calls"
         for name, btn in getattr(self, "_pipe_btns", {}).items():
             btn.configure(text=labels.get(name, name))
+            if name == current:
+                btn.configure(style="CallOn.TButton")
+            else:
+                btn.configure(style="Call.TButton")
 
     def _append_log(self, message: str) -> None:
         self.log.configure(state="normal")
