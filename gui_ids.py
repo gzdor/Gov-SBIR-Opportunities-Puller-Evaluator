@@ -32,6 +32,7 @@ WORKFLOW_CHIPS = (
     ("UAS", "UAS"),
     ("D2P2", "D2P2"),
     ("Open", "__open__"),
+    ("Pre-release", "__pre__"),
     ("Has Q&A", "__qa__"),
     ("New Q&A", "__qa_delta__"),
     ("ITAR", "__itar__"),

@@ -817,6 +817,7 @@ def test_gui_status_chips_do_not_change_download_phrase():
     try:
         app = gui.App(root, interactive=False)
         app._chip_vars["__open__"].set(True)
+        app._chip_vars["__pre__"].set(True)
         app._chip_vars["__due7__"].set(True)
         app._chip_vars["__due14__"].set(True)
         app._chip_vars["__qa__"].set(True)
@@ -852,6 +853,15 @@ def test_gui_open_and_due7_chips_exclude_closed_and_pre_release():
         assert codes == {"DAF01", "DAF03"}
         assert "due ≤7d" in app.bluf_caption_var.get()
         assert "2 shown / 5 topics" in app.bluf_caption_var.get()
+        app._chip_vars["__open__"].set(False)
+        app._chip_vars["__due7__"].set(False)
+        app._chip_vars["__pre__"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "ARM01"
+        }
+        assert "Pre-release" in app._work_checks["__pre__"].cget("text")
     finally:
         root.destroy()
 

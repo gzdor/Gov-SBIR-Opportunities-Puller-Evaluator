@@ -50,12 +50,12 @@ flowchart TB
 | **Component** chips (`DAF`, `Army`, …) | Both: download phrase **and** table | Same alias algebra (`DAF` = USAF / Air Force) |
 | **SBIR / STTR / UAS / D2P2** chips | Both | Same alias algebra |
 | **Find in snapshot** | Table only | Literal substring **or** alias groups |
-| **Open / Has Q&A / New Q&A / ITAR / New / Changed / due** | Table only | Not text — status, Q&A delta, or vs previous snapshot |
+| **Open / Pre-release / Has Q&A / New Q&A / ITAR / New / Changed / due** | Table only | Not text — status, Q&A delta, or vs previous snapshot |
 | **Calls** / **Tech area** | Table only | Exact triage label or `technologyAreas` item |
 
-Chips whose keys start with `__` (`__open__`, `__qa__`, `__qa_delta__`,
-`__itar__`, `__new__`, `__changed__`, `__due7__`, `__due14__`) are **never**
-appended to the download phrase.
+Chips whose keys start with `__` (`__open__`, `__pre__`, `__qa__`,
+`__qa_delta__`, `__itar__`, `__new__`, `__changed__`, `__due7__`,
+`__due14__`) are **never** appended to the download phrase.
 
 ## AND-of-OR algebra
 
@@ -152,10 +152,11 @@ Filters apply **in this order**, each one narrowing the previous list:
 flowchart TD
     All[_bluf_rows] --> TextChips[Each on Component / SBIR / STTR / UAS / D2P2 chip]
     TextChips --> Open[Open chip?]
-    Open --> Due[due less than 7d / 14d?]
+    Open --> Pre[Pre-release chip?]
+    Pre --> Due[due less than 7d / 14d?]
     Due --> QA[Has Q and A?]
     QA --> ITAR[ITAR?]
-    ITAR --> Diff[New / Changed vs last Diff?]
+    ITAR --> Diff[New / Changed / New Q and A?]
     Diff --> Area[Tech area combo]
     Area --> Call[Calls combo]
     Call --> Find[Find in snapshot]

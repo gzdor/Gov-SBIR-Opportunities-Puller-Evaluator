@@ -534,6 +534,8 @@ class ChromeMixin:
                     counts[key] += 1
             if analyze.is_open_status(row.get("status")):
                 counts["__open__"] += 1
+            if analyze.is_pre_release_status(row.get("status")):
+                counts["__pre__"] += 1
             if self._due_in_window(row, 7):
                 counts["__due7__"] += 1
             if self._due_in_window(row, 14):

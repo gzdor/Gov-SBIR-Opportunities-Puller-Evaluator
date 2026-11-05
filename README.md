@@ -64,7 +64,7 @@ Useful keys and chips
 
 - **Component** chips match DSIP groups (DAF, Army, Navy, …). Counts appear
   after a snapshot is loaded; empty groups hide unless you show them.
-- **Narrow:** SBIR / STTR / UAS / D2P2 / Open / Has Q&A / New Q&A / ITAR /
+- **Narrow:** SBIR / STTR / UAS / D2P2 / Open / Pre-release / Has Q&A / New Q&A / ITAR /
   New / Changed / due windows. **New** is topics not in the previous
   snapshot; **Changed** is title/status/due; **New Q&A** is published
   answers added. They fill automatically vs the next-older folder (or pick

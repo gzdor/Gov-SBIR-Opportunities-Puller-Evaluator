@@ -127,8 +127,9 @@ to DSIP. `analyze.query_groups` expands each token to an OR-group
 `AI` from hitting `Domain`. Cosine similarity is display-only; it is not a
 keep/drop gate.
 
-Workflow chips `__open__`, `__qa__`, `__qa_delta__`, `__itar__`, `__new__`,
-`__changed__`, `__due7__`, `__due14__` never enter the download phrase.
+Workflow chips `__open__`, `__pre__`, `__qa__`, `__qa_delta__`, `__itar__`,
+`__new__`, `__changed__`, `__due7__`, `__due14__` never enter the download
+phrase.
 
 Full GUI diagrams, the table pipeline, and worked `DAF UAS` examples:
 [docs/FILTER_TEXT_MATCHING_README.md](docs/FILTER_TEXT_MATCHING_README.md).

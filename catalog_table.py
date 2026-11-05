@@ -248,6 +248,8 @@ class CatalogTableMixin:
             ]
         if self._chip_vars["__open__"].get():
             rows = [row for row in rows if analyze.is_open_status(row.get("status"))]
+        if self._chip_vars["__pre__"].get():
+            rows = [row for row in rows if analyze.is_pre_release_status(row.get("status"))]
         if self._chip_vars["__due7__"].get():
             rows = [row for row in rows if self._due_in_window(row, 7)]
         if self._chip_vars["__due14__"].get():
