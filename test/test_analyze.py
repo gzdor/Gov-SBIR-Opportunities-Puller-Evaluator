@@ -468,6 +468,74 @@ def test_load_qa_excerpt_rejects_traversal_and_non_json(tmp_path):
     assert "Q: Hi" in analyze.load_qa_excerpt(tmp_path, "qa/ok.json")
 
 
+def test_bluf_released_prefers_pre_release_date():
+    row = analyze.bluf_row(
+        {
+            "topicId": "t0",
+            "topicCode": "DAF01",
+            "topicTitle": "Air",
+            "topicStatus": "Open",
+            "topicPreReleaseStartDate": "2026-10-07T00:00:00+00:00",
+            "topicStartDate": "2026-10-28T00:00:00+00:00",
+            "topicEndDate": "2026-11-25T00:00:00+00:00",
+        },
+        None,
+    )
+    assert row["released"] == "2026-10-07"
+    assert row["opens"] == "2026-10-28"
+    assert "Released: 2026-10-07" in analyze.format_capture_brief(row)
+
+
+def test_previous_snapshot_folder_picks_next_older(tmp_path):
+    def make(name: str) -> Path:
+        folder = tmp_path / name
+        folder.mkdir()
+        (folder / "manifest.json").write_text("{}", encoding="utf-8")
+        return folder
+
+    older = make("all_dsip_opportunities_20261101_000000")
+    make("all_dsip_opportunities_20261102_120000")
+    newest = make("all_dsip_opportunities_20261103_090000")
+    assert analyze.previous_snapshot_folder(newest) == tmp_path / "all_dsip_opportunities_20261102_120000"
+    assert analyze.previous_snapshot_folder(older) is None
+
+
+def test_snapshot_diff_flags_new_qa_on_existing_topic():
+    previous = [
+        {
+            "topicCode": "DAF01",
+            "topicTitle": "Air",
+            "topicStatus": "Open",
+            "topicEndDate": "2026-11-25",
+            "qaPublished": 1,
+            "qaExcerpt": "Q: Old threshold?",
+        }
+    ]
+    current = [
+        {
+            "topicCode": "DAF01",
+            "topicTitle": "Air",
+            "topicStatus": "Open",
+            "topicEndDate": "2026-11-25",
+            "qaPublished": 2,
+            "qaExcerpt": "Q: Old threshold?\nQ: New page count?",
+        },
+        {
+            "topicCode": "DAF02",
+            "topicTitle": "Brand new",
+            "topicStatus": "Open",
+            "topicEndDate": "2026-11-25",
+            "qaPublished": 0,
+        },
+    ]
+    diff = analyze.snapshot_diff(current, previous)
+    assert diff["added"] == ["DAF02"]
+    assert diff["changed"] == []
+    assert diff["qa_changed"] == ["DAF01"]
+    assert "New page count?" in diff["qa_notes"]["DAF01"]
+    assert "1 → 2" in diff["qa_notes"]["DAF01"]
+
+
 def test_load_json_under_and_full_qa_excerpt(tmp_path):
     import json
 

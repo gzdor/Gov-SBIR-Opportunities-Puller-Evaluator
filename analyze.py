@@ -410,6 +410,20 @@ def refresh_due_in(row: dict) -> dict:
     return row
 
 
+def refresh_released(row: dict) -> dict:
+    """Fill Released from pre-release start, else the open (proposal) date."""
+    current = str(row.get("released") or "").strip()
+    if current and current != "—":
+        return row
+    raw = (
+        row.get("topicPreReleaseStartDate")
+        or row.get("topicStartDate")
+        or row.get("opens")
+    )
+    row["released"] = format_day(raw) if raw not in (None, "", "—") else "—"
+    return row
+
+
 def days_until(iso: str | None) -> str:
     if not iso:
         return "—"
@@ -1296,6 +1310,9 @@ def bluf_row(topic: dict, output_dir: Path | None = None) -> dict:
         "client": client,
         "program": program or "—",
         "status": topic.get("topicStatus") or "—",
+        "released": format_day(
+            topic.get("topicPreReleaseStartDate") or topic.get("topicStartDate")
+        ),
         "opens": format_day(topic.get("topicStartDate")),
         "due": format_day(topic.get("topicEndDate")),
         "dueIn": days_until(topic.get("topicEndDate")),
@@ -1686,6 +1703,7 @@ def format_capture_brief(row: dict) -> str:
         f"Client: {row.get('client') or '—'}",
         (
             f"Status: {row.get('status') or '—'} · "
+            f"Released: {row.get('released') or '—'} · "
             f"Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})"
         ),
         (
@@ -1716,6 +1734,7 @@ BLUF_CSV_COLUMNS = (
     "client",
     "program",
     "status",
+    "released",
     "opens",
     "due",
     "dueIn",
@@ -1743,19 +1762,169 @@ def write_bluf_csv(rows: list[dict], dest: Path) -> None:
             writer.writerow({key: row.get(key, "") for key in BLUF_CSV_COLUMNS})
 
 
-def snapshot_diff(current: list[dict], previous: list[dict]) -> dict[str, list[str]]:
-    """Compare two topic lists by topicCode. SaaS tools do not diff DSIP folders."""
-    cur = {str(row.get("topicCode") or ""): row for row in current if row.get("topicCode")}
-    prev = {str(row.get("topicCode") or ""): row for row in previous if row.get("topicCode")}
+def topic_code_of(row: dict | None) -> str:
+    if not row:
+        return ""
+    return str(row.get("topicCode") or row.get("code") or "")
+
+
+def _catalog_sig(row: dict) -> tuple[str, str, str]:
+    return (
+        str(row.get("topicTitle") or row.get("title") or ""),
+        str(row.get("topicStatus") or row.get("status") or ""),
+        str(row.get("topicEndDate") or row.get("due") or "")[:10],
+    )
+
+
+def qa_question_lines(
+    row: dict, output_dir: Path | None = None
+) -> list[str]:
+    """Published question text from qa/*.json, else Q: lines in the excerpt."""
+    rel = str(row.get("qaFile") or "")
+    payload = load_json_under(output_dir, rel) if output_dir and rel else None
+    if isinstance(payload, list):
+        lines = []
+        for item in payload:
+            if not isinstance(item, dict):
+                continue
+            question = strip_html(str(item.get("question") or "")).strip()
+            if question:
+                lines.append(question)
+        if lines:
+            return lines
+    excerpt = str(row.get("qaExcerpt") or "")
+    found = []
+    for line in excerpt.splitlines():
+        text = line.strip()
+        if text.startswith("Q:"):
+            found.append(text[2:].strip())
+    return found
+
+
+def format_qa_delta(
+    current_qs: list[str],
+    previous_qs: list[str],
+    current_n: int,
+    previous_n: int,
+) -> str:
+    """Human lines for 'what is new in Q&A vs the last snapshot'."""
+    prev_set = {item for item in previous_qs if item}
+    new_qs = [item for item in current_qs if item and item not in prev_set]
+    parts = [f"Published Q&A: {previous_n} → {current_n} vs last snapshot."]
+    if new_qs:
+        parts.append("New questions:")
+        parts.extend(f"Q: {item}" for item in new_qs[:12])
+        extra = len(new_qs) - 12
+        if extra > 0:
+            parts.append(f"… {extra} more")
+    elif current_n > previous_n:
+        parts.append("Count increased; full text is in this snapshot's qa/ folder.")
+    elif current_qs != previous_qs:
+        parts.append("Published answers changed.")
+    return "\n".join(parts)
+
+
+def previous_snapshot_folder(current: Path | None) -> Path | None:
+    """Next-older `all_dsip_opportunities_*` sibling that has a manifest."""
+    if current is None:
+        return None
+    try:
+        folder = Path(current)
+        parent = folder.parent
+    except (TypeError, ValueError):
+        return None
+    if not parent.is_dir():
+        return None
+    found = sorted(
+        (
+            path
+            for path in parent.glob("all_dsip_opportunities_*")
+            if path.is_dir() and (path / "manifest.json").is_file()
+        ),
+        key=lambda path: path.name,
+    )
+    try:
+        here = folder.resolve()
+    except OSError:
+        here = folder
+    older = []
+    for path in found:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if resolved == here:
+            continue
+        if path.name < folder.name:
+            older.append(path)
+    return older[-1] if older else None
+
+
+def load_snapshot_compare_rows(folder: Path) -> list[dict]:
+    """Topics (plus BLUF Q&A fields) from a local manifest for snapshot_diff."""
+    manifest = Path(folder) / "manifest.json"
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(payload, dict):
+        return []
+    topics = [row for row in (payload.get("topics") or []) if isinstance(row, dict)]
+    bluf = {
+        topic_code_of(row): row
+        for row in (payload.get("bluf") or [])
+        if isinstance(row, dict) and topic_code_of(row)
+    }
+    if not topics:
+        return list(bluf.values())
+    merged = []
+    for topic in topics:
+        row = dict(topic)
+        extra = bluf.get(topic_code_of(topic)) or {}
+        if extra.get("qaExcerpt") and not row.get("qaExcerpt"):
+            row["qaExcerpt"] = extra.get("qaExcerpt")
+        if extra.get("qaFile") and not row.get("qaFile"):
+            row["qaFile"] = extra.get("qaFile")
+        if extra.get("qaPublished") not in (None, "") and published_qa_count(row) == 0:
+            row["qaPublished"] = extra.get("qaPublished")
+        merged.append(row)
+    return merged
+
+
+def snapshot_diff(
+    current: list[dict],
+    previous: list[dict],
+    *,
+    current_dir: Path | None = None,
+    previous_dir: Path | None = None,
+) -> dict:
+    """Compare two topic lists by topicCode. SaaS tools do not diff DSIP folders.
+
+    `changed` is title / status / due. `qa_changed` is published Q&A count or
+    question text vs the previous snapshot (existing topics only).
+    """
+    cur = {topic_code_of(row): row for row in current if topic_code_of(row)}
+    prev = {topic_code_of(row): row for row in previous if topic_code_of(row)}
     added = sorted(code for code in cur if code not in prev)
     removed = sorted(code for code in prev if code not in cur)
-    changed = []
+    changed: list[str] = []
+    qa_changed: list[str] = []
+    qa_notes: dict[str, str] = {}
     for code in sorted(set(cur) & set(prev)):
         left, right = cur[code], prev[code]
-        if (left.get("topicTitle"), left.get("topicStatus"), left.get("topicEndDate")) != (
-            right.get("topicTitle"),
-            right.get("topicStatus"),
-            right.get("topicEndDate"),
-        ):
+        if _catalog_sig(left) != _catalog_sig(right):
             changed.append(code)
-    return {"added": added, "removed": removed, "changed": changed}
+        left_n = published_qa_count(left)
+        right_n = published_qa_count(right)
+        left_qs = qa_question_lines(left, current_dir)
+        right_qs = qa_question_lines(right, previous_dir)
+        if left_n != right_n or left_qs != right_qs:
+            qa_changed.append(code)
+            qa_notes[code] = format_qa_delta(left_qs, right_qs, left_n, right_n)
+    return {
+        "added": added,
+        "removed": removed,
+        "changed": changed,
+        "qa_changed": qa_changed,
+        "qa_notes": qa_notes,
+    }

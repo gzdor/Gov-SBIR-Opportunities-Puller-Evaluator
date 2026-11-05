@@ -64,9 +64,12 @@ Useful keys and chips
 
 - **Component** chips match DSIP groups (DAF, Army, Navy, …). Counts appear
   after a snapshot is loaded; empty groups hide unless you show them.
-- **Narrow:** SBIR / STTR / UAS / D2P2 / Open / Has Q&A / ITAR / New /
-  Changed / due windows. **New** and **Changed** fill after
-  **Diff previous…**.
+- **Narrow:** SBIR / STTR / UAS / D2P2 / Open / Has Q&A / New Q&A / ITAR /
+  New / Changed / due windows. **New** is topics not in the previous
+  snapshot; **Changed** is title/status/due; **New Q&A** is published
+  answers added. They fill automatically vs the next-older folder (or pick
+  one with **Diff previous…**). Click **Released** to sort by pre-release
+  date.
 - **Find in snapshot** (Ctrl+F) filters the table you already have.
 - `1` Pursue · `2` Watch · `3` Pass · `0` clear (table focused).
 - **Copy brief** (Ctrl+B) copies a one-block capture note.

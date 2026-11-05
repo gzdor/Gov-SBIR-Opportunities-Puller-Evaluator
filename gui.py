@@ -126,6 +126,9 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
         self._triage: dict[str, dict[str, str]] = {}
         self._diff_added: set[str] = set()
         self._diff_changed: set[str] = set()
+        self._diff_qa: set[str] = set()
+        self._qa_notes: dict[str, str] = {}
+        self._diff_vs = ""
         self._dept_checks: dict[str, tk.Widget] = {}
         self._sort_column = ""
         self._sort_reverse = False
@@ -351,6 +354,7 @@ class App(ChromeMixin, CatalogTableMixin, TopicPaneMixin, GuideTabMixin):
             row["pdfStatus"] = topic.get("pdfStatus") or "pending"
             self._stamp_triage(row)
         self._fill_tech_areas()
+        self._auto_diff_previous_snapshot()
         self.phase_var.set(f"Catalog {len(self._bluf_rows)} topics")
         self._refresh_header_status()
         self._render_table()

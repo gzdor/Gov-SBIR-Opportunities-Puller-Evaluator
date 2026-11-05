@@ -69,6 +69,7 @@ def _bluf(
         "program": extra.pop("program", "SBIR"),
         "status": extra.pop("status", "Open"),
         "opens": extra.pop("opens", "2026-10-28"),
+        "released": extra.pop("released", "2026-10-14"),
         "due": extra.pop("due", "2026-11-25"),
         "dueIn": extra.pop("dueIn", "26d"),
         "problem": extra.pop("problem", "Harness"),
@@ -763,6 +764,7 @@ def test_gui_chrome_pills_and_pinned_columns():
         assert "code" in shown and "title" in shown and "call" in shown
         assert "trl" not in shown
         assert "opens" not in shown
+        assert "released" in shown
         assert "techVolLimit" in shown
         assert app._guide_nav.size() == len(sbir_guide.section_titles())
         labels = [item[0] for item in app._palette_commands()]
@@ -1294,5 +1296,126 @@ def test_gui_interactive_snapshot_load_starts_page_limit_pass(tmp_path, monkeypa
         assert seen
         assert app._bluf_rows[0]["techVolLimit"] == "7 (stated)"
         assert _row_values(app)["techVolLimit"] == "7 (stated)"
+    finally:
+        root.destroy()
+
+
+def test_gui_released_column_sorts_newest_first():
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app._bluf_rows = [
+            _bluf("t0", "DAF01", "Older", released="2026-10-07"),
+            _bluf("t1", "DAF02", "Newer", released="2026-11-04"),
+            _bluf("t2", "DAF03", "Middle", released="2026-10-28"),
+        ]
+        app._sort_by("released")
+        root.update()
+        codes = [
+            app.table.item(iid, "values")[app._columns.index("code")]
+            for iid in app.table.get_children()
+        ]
+        assert codes == ["DAF02", "DAF03", "DAF01"]
+        assert _row_values(app, app.table.get_children()[0])["released"] == "2026-11-04"
+        app._show_detail(app._bluf_rows[1])
+        body = app.detail_text.get("1.0", "end")
+        assert "Released: 2026-11-04" in body
+    finally:
+        root.destroy()
+
+
+def test_gui_auto_diff_previous_snapshot_fills_new_and_qa_chips(tmp_path):
+    older = tmp_path / "all_dsip_opportunities_20261101_000000"
+    newer = tmp_path / "all_dsip_opportunities_20261104_120000"
+    older.mkdir()
+    newer.mkdir()
+    (older / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [
+                    {
+                        "topicId": "keep",
+                        "topicCode": "DAF01",
+                        "topicTitle": "Air",
+                        "topicStatus": "Open",
+                        "topicEndDate": "2026-11-25",
+                        "qaPublished": 1,
+                        "qaExcerpt": "Q: Old threshold?",
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    (newer / "manifest.json").write_text(
+        json.dumps(
+            {
+                "topics": [
+                    {
+                        "topicId": "keep",
+                        "topicCode": "DAF01",
+                        "topicTitle": "Air",
+                        "topicStatus": "Open",
+                        "topicEndDate": "2026-11-25",
+                        "qaPublished": 2,
+                        "qaExcerpt": "Q: Old threshold?\nQ: Page count?",
+                    },
+                    {
+                        "topicId": "fresh",
+                        "topicCode": "DAF99",
+                        "topicTitle": "Brand new topic",
+                        "topicStatus": "Open",
+                        "topicEndDate": "2026-11-25",
+                        "qaPublished": 0,
+                    },
+                ],
+                "bluf": [
+                    {
+                        "topicId": "keep",
+                        "code": "DAF01",
+                        "title": "Air",
+                        "status": "Open",
+                        "qaPublished": 2,
+                        "qaExcerpt": "Q: Old threshold?\nQ: Page count?",
+                    },
+                    {
+                        "topicId": "fresh",
+                        "code": "DAF99",
+                        "title": "Brand new topic",
+                        "status": "Open",
+                        "qaPublished": 0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    root = _make_root()
+    try:
+        app = gui.App(root, interactive=False)
+        app.folder_var.set(str(tmp_path))
+        assert app._load_snapshot(newer)
+        root.update()
+        assert app._diff_added == {"DAF99"}
+        assert app._diff_qa == {"DAF01"}
+        assert "Page count?" in app._qa_notes["DAF01"]
+        app._chip_vars["__new__"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "DAF99"
+        }
+        app._chip_vars["__new__"].set(False)
+        app._chip_vars["__qa_delta__"].set(True)
+        app._render_table()
+        root.update()
+        assert {_row_values(app, iid)["code"] for iid in app.table.get_children()} == {
+            "DAF01"
+        }
+        keep = next(row for row in app._bluf_rows if row["code"] == "DAF01")
+        app._show_detail(keep)
+        body = app.detail_text.get("1.0", "end")
+        assert "Q&A since" in body
+        assert "Page count?" in body
     finally:
         root.destroy()

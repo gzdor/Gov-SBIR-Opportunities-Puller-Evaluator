@@ -50,12 +50,12 @@ flowchart TB
 | **Component** chips (`DAF`, `Army`, …) | Both: download phrase **and** table | Same alias algebra (`DAF` = USAF / Air Force) |
 | **SBIR / STTR / UAS / D2P2** chips | Both | Same alias algebra |
 | **Find in snapshot** | Table only | Literal substring **or** alias groups |
-| **Open / Has Q&A / ITAR / New / Changed / due** | Table only | Not text — status, counts, or last **Diff previous…** |
+| **Open / Has Q&A / New Q&A / ITAR / New / Changed / due** | Table only | Not text — status, Q&A delta, or vs previous snapshot |
 | **Calls** / **Tech area** | Table only | Exact triage label or `technologyAreas` item |
 
-Chips whose keys start with `__` (`__open__`, `__qa__`, `__itar__`,
-`__new__`, `__changed__`, `__due7__`, `__due14__`) are **never** appended to
-the download phrase.
+Chips whose keys start with `__` (`__open__`, `__qa__`, `__qa_delta__`,
+`__itar__`, `__new__`, `__changed__`, `__due7__`, `__due14__`) are **never**
+appended to the download phrase.
 
 ## AND-of-OR algebra
 
@@ -166,8 +166,20 @@ flowchart TD
 `due < 7d` uses `due_days_int`. `closed` is `-1`, so closed rows never pass
 a due window. `today` counts as `0`.
 
-**New** / **Changed** stay empty until you run **Diff previous…**. They
-compare `topicCode` via `snapshot_diff`.
+**New** / **Changed** / **New Q&A** compare this snapshot to the next-older
+`all_dsip_opportunities_*` folder in the same parent (automatic after a
+download or Open snapshot). **Diff previous…** still lets you pick a specific
+older folder.
+
+- **New** — topic code was not in the previous snapshot (brand-new
+  opportunities).
+- **Changed** — same topic, but title, status, or due date moved.
+- **New Q&A** — same topic, but published Question & Answer count or question
+  text grew. This is *not* the same as **Changed**.
+
+Click the **Released** column header to sort by pre-release date (newest first
+on the first click). **Opens** is the later proposal-open date and stays
+hidden unless you turn it on under Columns.
 
 ## Download vs Find — same glossary, different corpus
 

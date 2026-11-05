@@ -26,11 +26,18 @@ You need: Windows 11, internet, about 500 MB of disk, 15 minutes.
 
 ## 1. Install Python from the Microsoft Store (no admin)
 
+You may need to **sign in to the Microsoft Store** before it will let you
+install Python. Use the Microsoft account already on this PC (personal or
+work/school). If **Get** / **Install** is greyed out, click the profile icon
+in the top-right of Store, sign in, then try Python again.
+
 1. Open the **Microsoft Store** (Start menu → type `Store`).
-2. Search for **Python 3.13** (Python 3.12 is also fine).
-3. Open the listing published by the **Python Software Foundation**.
-4. Click **Get** / **Install**. Wait until it says **Open**.
-5. If Windows asks about **app execution aliases**, leave **python.exe** and
+2. Sign in if Store asks (profile icon, top right). A BD analyst does not
+   need admin rights for this — only a Store login.
+3. Search for **Python 3.13** (Python 3.12 is also fine).
+4. Open the listing published by the **Python Software Foundation**.
+5. Click **Get** / **Install**. Wait until it says **Open**.
+6. If Windows asks about **app execution aliases**, leave **python.exe** and
    **python3.exe** **On** (Settings → Apps → Advanced app settings → App
    execution aliases).
 
@@ -108,7 +115,11 @@ python gui.py
 4. Wait until the bar says **Done**. The table fills earlier; PDFs finish
    after.
 5. Click a row. The bottom **Topic** pane shows the overview, page limits,
-   CMMC, and Q&A that were already public on DSIP.
+   CMMC, **Released** date, and Q&A that were already public on DSIP.
+6. If you already have an older download in the same folder, **New** /
+   **New Q&A** chips fill in automatically. Click **New** to see only topics
+   that were not in the previous snapshot. Click **Released** to sort newest
+   first.
 
 Page limits: **Tech Vol Page Limit** and **Feasibility Study Page Limit**.
 A value like `5 (stated)` was read from that topic’s instruction PDF. A
@@ -127,6 +138,7 @@ snapshot** if you want yesterday’s download without hitting DSIP.
 
 | What you see | What to try |
 | --- | --- |
+| Store will not install Python / Get is greyed out | Sign in to Microsoft Store (profile icon), then retry Python 3.13 |
 | `python` is not found | Store Python + app execution aliases; new Terminal |
 | `pip` / `pypdf` install fails | Stay on internet; retry `python -m pip install pypdf` |
 | Window never appears | Run `python gui.py` in Terminal and read the red text |

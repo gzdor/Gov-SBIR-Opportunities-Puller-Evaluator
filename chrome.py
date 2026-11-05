@@ -219,7 +219,7 @@ class ChromeMixin:
         self.tech_area_filter.grid(row=0, column=2, sticky="w", padx=6)
         ttk.Label(
             calls,
-            text="1 Pursue · 2 Watch · 3 Pass · 0 clear   (table focused)",
+            text="New = not in previous snapshot · Changed = title/status/due · New Q&A = published answers added",
             style="Hint.TLabel",
         ).grid(row=0, column=3, sticky="w", padx=(12, 0))
 
@@ -546,6 +546,8 @@ class ChromeMixin:
                 counts["__new__"] += 1
             if self._row_in_diff(row, self._diff_changed):
                 counts["__changed__"] += 1
+            if self._row_in_diff(row, getattr(self, "_diff_qa", set())):
+                counts["__qa_delta__"] += 1
         show_zero = bool(self.show_zero_components.get())
         self._reflow_pills(
             DEPARTMENT_CHIPS,

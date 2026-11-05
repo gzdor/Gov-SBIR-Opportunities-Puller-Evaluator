@@ -51,8 +51,8 @@ flowchart TB
         SEARCH["topics search JSON"]
         TPDF["topic PDF"]
         UPLOAD["solicitation upload"]
-        QA["/topics/{id}/questions"]
-        DET["/topics/{id}/details"]
+        QA["topics/id/questions"]
+        DET["topics/id/details"]
     end
 
     GUI --> FILTER
@@ -76,25 +76,23 @@ flowchart TB
 sequenceDiagram
     actor U as User
     participant G as gui.py
-    participant M as main.py / dsip_http.py
+    participant M as main.py
     participant API as DSIP
     participant FS as Output folder
 
     U->>G: Download
-    G->>M: run() on a worker thread
+    G->>M: run on a worker thread
     M->>API: search pages
     M-->>G: catalog_ready
     G->>G: fill BLUF table
-    par PDFs
-        M->>API: topic + solicitation PDFs
-        M-->>G: item_done / end_phase
-        G->>G: page limits from instruction PDFs; keep selection and yview
-    end
-    M->>API: published Q and A + details
-    M->>FS: manifest.json, qa/, details/
+    M->>API: topic and solicitation PDFs
+    M-->>G: item_done
+    G->>G: page limits from instruction PDFs
+    M->>API: published Q and A plus details
+    M->>FS: write manifest, qa, details
     M-->>G: finished
     U->>G: click row
-    G->>G: extractive overview + full Q and A
+    G->>G: extractive overview plus full Q and A
 ```
 
 ## CLI data flow
@@ -129,8 +127,8 @@ to DSIP. `analyze.query_groups` expands each token to an OR-group
 `AI` from hitting `Domain`. Cosine similarity is display-only; it is not a
 keep/drop gate.
 
-Workflow chips `__open__`, `__qa__`, `__itar__`, `__new__`, `__changed__`,
-`__due7__`, `__due14__` never enter the download phrase.
+Workflow chips `__open__`, `__qa__`, `__qa_delta__`, `__itar__`, `__new__`,
+`__changed__`, `__due7__`, `__due14__` never enter the download phrase.
 
 Full GUI diagrams, the table pipeline, and worked `DAF UAS` examples:
 [docs/FILTER_TEXT_MATCHING_README.md](docs/FILTER_TEXT_MATCHING_README.md).

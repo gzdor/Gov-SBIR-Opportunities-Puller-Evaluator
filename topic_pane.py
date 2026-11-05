@@ -35,6 +35,7 @@ class TopicPaneMixin:
         )
         self.detail_text.tag_configure("body", foreground=theme.FG)
         self.detail_text.tag_configure("limit", foreground=theme.ACCENT)
+        self.detail_text.tag_configure("delta", foreground=theme.SOON)
         detail.rowconfigure(1, weight=1)
         actions = ttk.Frame(detail)
         actions.grid(row=2, column=0, columnspan=3, sticky="ew", pady=(6, 0))
@@ -136,6 +137,7 @@ class TopicPaneMixin:
                 "\n".join(
                     [
                         f"Client: {row.get('client') or '—'}    Call: {call}",
+                        f"Released: {row.get('released') or '—'}    Opens: {row.get('opens') or '—'}",
                         f"Status: {row.get('status') or '—'}    Due: {row.get('due') or '—'} ({row.get('dueIn') or '—'})",
                         f"Program: {row.get('program') or '—'}    Contract: {row.get('contract') or '—'}",
                         f"TRL: {row.get('trl') or '—'}    Funding: {row.get('funding') or '—'}",
@@ -175,6 +177,12 @@ class TopicPaneMixin:
         if extra_problem:
             self.detail_text.insert("end", extra_problem + "\n\n", "body")
         excerpt = str(row.get("qaExcerpt") or "").strip()
+        code = str(row.get("code") or row.get("topicCode") or "")
+        qa_note = str((getattr(self, "_qa_notes", {}) or {}).get(code) or "").strip()
+        if qa_note:
+            vs = str(getattr(self, "_diff_vs", "") or "last snapshot")
+            self.detail_text.insert("end", f"Q&A since {vs}\n", "h")
+            self.detail_text.insert("end", qa_note + "\n\n", "delta")
         if excerpt:
             self.detail_text.insert("end", "Published Q&A\n", "h")
             self.detail_text.insert("end", excerpt + "\n", "body")

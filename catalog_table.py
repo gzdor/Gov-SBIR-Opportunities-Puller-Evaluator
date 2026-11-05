@@ -43,6 +43,8 @@ class CatalogTableMixin:
         self.table.tag_configure("odd", background=theme.ROW)
         self.table.tag_configure("even", background=theme.ROW_ALT)
         self.table.tag_configure("pdflink", foreground=theme.LINK)
+        self.table.tag_configure("newtopic", foreground=theme.ACCENT)
+        self.table.tag_configure("qadelta", foreground=theme.SOON)
         self.table.grid(row=0, column=0, sticky="nsew")
         self._empty = ttk.Frame(table_frame, padding=24)
         self._empty.place(relx=0.5, rely=0.45, anchor="center")
@@ -167,8 +169,10 @@ class CatalogTableMixin:
         self._topics_for_diff = payload.get("topics") or []
         for row in self._bluf_rows:
             analyze.refresh_due_in(row)
+            analyze.refresh_released(row)
             self._stamp_triage(row)
         self._fill_tech_areas()
+        self._auto_diff_previous_snapshot()
         self._render_table()
         if not self.interactive:
             self._refresh_all_page_limits(force=False)
@@ -256,6 +260,8 @@ class CatalogTableMixin:
             rows = [row for row in rows if self._row_in_diff(row, self._diff_added)]
         if self._chip_vars["__changed__"].get():
             rows = [row for row in rows if self._row_in_diff(row, self._diff_changed)]
+        if self._chip_vars["__qa_delta__"].get():
+            rows = [row for row in rows if self._row_in_diff(row, self._diff_qa)]
         wanted_area = self.tech_area_var.get()
         if wanted_area and wanted_area != "All tech areas":
             rows = [
@@ -321,6 +327,10 @@ class CatalogTableMixin:
             if digits:
                 return (0, int(digits[:2]), val.lower())
             return (3, 0, val.lower())
+        if column in {"released", "opens", "due"}:
+            if val in {"", "—"}:
+                return (1, "", "")
+            return (0, val[:10], "")
         if column == "dueIn":
             if val == "today":
                 return (0, 0, "")
@@ -351,6 +361,10 @@ class CatalogTableMixin:
             call = analyze.normalize_triage(row.get("call"))
             if call == "pursue":
                 tags.append("pursue")
+            if self._row_in_diff(row, self._diff_added):
+                tags.append("newtopic")
+            if self._row_in_diff(row, getattr(self, "_diff_qa", set())):
+                tags.append("qadelta")
             pdf_name = str(row.get("pdf") or "")
             if pdf_name and pdf_name not in {"Failed", "—"}:
                 tags.append("pdflink")
@@ -385,7 +399,8 @@ class CatalogTableMixin:
             self._sort_reverse = not self._sort_reverse
         else:
             self._sort_column = column
-            self._sort_reverse = False
+            # Released / Opens: newest first on the first click.
+            self._sort_reverse = column in {"released", "opens"}
         self._render_table()
 
     def export_csv(self) -> None:
@@ -422,22 +437,69 @@ class CatalogTableMixin:
         if not current:
             self._warn("Load or download a snapshot first so there is something to compare.")
             return
-        diff = analyze.snapshot_diff(current, previous)
-        self._append_log(
-            f"Snapshot diff vs {chosen}: "
-            f"+{len(diff['added'])} new, -{len(diff['removed'])} gone, "
-            f"{len(diff['changed'])} changed."
+        previous_dir = Path(chosen)
+        diff = analyze.snapshot_diff(
+            current,
+            previous,
+            current_dir=self.output_dir,
+            previous_dir=previous_dir,
         )
-        if diff["added"]:
-            self._append_log("  new: " + ", ".join(diff["added"][:12]))
-        if diff["removed"]:
-            self._append_log("  gone: " + ", ".join(diff["removed"][:12]))
-        self._diff_added = set(diff["added"])
-        self._diff_changed = set(diff["changed"])
+        self._store_snapshot_diff(diff, previous_dir.name)
         self._refresh_chip_labels()
         self._render_table()
         if self._chrome_collapsed:
             self.log_frame.grid()
+
+    def _clear_snapshot_diff(self) -> None:
+        self._diff_added = set()
+        self._diff_changed = set()
+        self._diff_qa = set()
+        self._qa_notes = {}
+        self._diff_vs = ""
+
+    def _store_snapshot_diff(self, diff: dict, vs_label: str) -> None:
+        self._diff_added = set(diff.get("added") or [])
+        self._diff_changed = set(diff.get("changed") or [])
+        self._diff_qa = set(diff.get("qa_changed") or [])
+        self._qa_notes = dict(diff.get("qa_notes") or {})
+        self._diff_vs = vs_label
+        if not (
+            self._diff_added
+            or self._diff_changed
+            or self._diff_qa
+            or diff.get("removed")
+        ):
+            return
+        self._append_log(
+            f"Snapshot diff vs {vs_label}: "
+            f"+{len(self._diff_added)} new, -{len(diff.get('removed') or [])} gone, "
+            f"{len(self._diff_changed)} changed, "
+            f"{len(self._diff_qa)} with new Q&A."
+        )
+        if self._diff_added:
+            self._append_log("  new: " + ", ".join(sorted(self._diff_added)[:12]))
+        if diff.get("removed"):
+            self._append_log("  gone: " + ", ".join(list(diff["removed"])[:12]))
+        if self._diff_qa:
+            self._append_log("  Q&A: " + ", ".join(sorted(self._diff_qa)[:12]))
+
+    def _auto_diff_previous_snapshot(self) -> None:
+        """Compare this snapshot to the next-older folder in the same parent."""
+        self._clear_snapshot_diff()
+        previous = analyze.previous_snapshot_folder(self.output_dir)
+        if previous is None:
+            return
+        previous_rows = analyze.load_snapshot_compare_rows(previous)
+        current = getattr(self, "_topics_for_diff", None) or self._bluf_rows
+        if not current or not previous_rows:
+            return
+        diff = analyze.snapshot_diff(
+            current,
+            previous_rows,
+            current_dir=self.output_dir,
+            previous_dir=previous,
+        )
+        self._store_snapshot_diff(diff, previous.name)
 
     def _row_by_iid(self, iid: str) -> dict | None:
         for row in self._bluf_rows:
@@ -508,7 +570,7 @@ class CatalogTableMixin:
         self._save_state()
 
     def _row_in_diff(self, row: dict, codes: set[str]) -> bool:
-        return str(row.get("code") or "") in codes
+        return analyze.topic_code_of(row) in codes
 
     def _fill_tech_areas(self) -> None:
         areas = sorted(
