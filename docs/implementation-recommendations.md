@@ -70,8 +70,9 @@ Page limits (2026-11-03)
   snapshot, off by default, extractive fallback — [ADR 010](design-decisions/010-optional-local-llms.md).
   Do not bundle a GGUF in the exe.
 - Code-signed public Windows download.
-- Replace `docs/images/app-window.jpg` after the next real capture (counts,
-  overview, instruction button).
+- README screenshot (`docs/images/app-window.jpg`) updated 2026-11-06
+  (Pipeline, Released, Pre-release, New Q&A). Replace again when chrome
+  changes.
 - Optional second instruction PDF picker when a topic lists several.
 
 ## How to take a slice

@@ -58,7 +58,7 @@ There is no packaged `.exe` for those platforms.
 5. Click a row. The bottom pane shows an extractive overview of that topic
    PDF, published Q&A, CMMC / ITAR, and actions.
 
-![DSIP Opportunities Discovery after a completed run](docs/images/app-window.jpg)
+![DSIP Opportunities Discovery after a completed run: Pipeline, Released, Pre-release, and New Q&A](docs/images/app-window.jpg)
 
 Useful keys and chips
 
