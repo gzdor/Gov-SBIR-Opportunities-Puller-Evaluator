@@ -19,6 +19,10 @@ Agentic-coding packet: [CASE_STUDY.md](CASE_STUDY.md),
 **Not a developer?** Windows 11, no Git, no admin password:
 [docs/WINDOWS_11_NO_ADMIN_README.md](docs/WINDOWS_11_NO_ADMIN_README.md)
 (Microsoft Store Python + Download ZIP, then double-click `run-gui.bat`).
+That double-click opens a console first (splash + Python / pypdf check);
+leave it open. The GUI starts after `Link established`.
+
+![Console that opens when you double-click run-gui.bat](docs/images/run-gui-terminal.png)
 
 How page-limit columns are filled:
 [docs/PAGE_LIMIT_EXTRACTION_README.md](docs/PAGE_LIMIT_EXTRACTION_README.md).
@@ -48,6 +52,9 @@ macOS / Linux: same conda env, then `python gui.py` or `python main.py`.
 There is no packaged `.exe` for those platforms.
 
 ## First session
+
+If you started with `run-gui.bat`, the black console above stays open behind
+the GUI. Do not close it until you are done.
 
 1. Pick a **Save in folder** (defaults to Downloads).
 2. Leave **Download filter** blank to pull every open topic, or type a local
