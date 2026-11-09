@@ -3,6 +3,10 @@ PolyForm Noncommercial License 1.0.0
 
 Copyright (c) 2026 gzdor (https://github.com/gzdor)
 
+Required Notice: Copyright gzdor (https://github.com/gzdor). Commercial
+use is not permitted except for Camgian Corporation as stated in the
+addendum at the end of this file.
+
 ## Acceptance
 
 In order to get any license under these terms, you must agree
@@ -128,3 +132,44 @@ software under these terms.
 
 **Use** means anything you do with the software requiring one of
 your licenses.
+
+---
+
+# Additional commercial license: Camgian Corporation only
+
+This addendum is an extra grant from the licensor. It does **not** change
+PolyForm Noncommercial 1.0.0 for any other person or company.
+
+The **named licensee** is Camgian Corporation, a defense technology company
+led by Gary Butler, website <https://www.camgian.com/>, identified as:
+
+- CAGE code **4NP29**
+- SAM Unique Entity ID **SPDKB76QMK48** (alternate listing **HVLBJJBVSUP7**)
+
+## Grant
+
+The licensor grants Camgian Corporation a copyright license and a patent
+license, on the same patent terms as above, to use, copy, modify, and
+internally share the software among Camgian Corporation personnel for
+Camgian Corporation’s **own commercial purposes**, including internal
+business development, capture, and proposal work.
+
+## Limits (no other company)
+
+This grant is personal to Camgian Corporation.
+
+- It does **not** extend to any other company, including primes, teammates,
+  customers, subcontractors, resellers, or joint-venture partners.
+- Camgian Corporation may **not** sublicense, sell, or redistribute the
+  software to another company as a product or paid service.
+- Use by a Camgian employee on behalf of another company is **not** covered.
+- Wholly owned Camgian subsidiaries under CAGE 4NP29 / UEI SPDKB76QMK48
+  (or HVLBJJBVSUP7) may use the software as Camgian Corporation. Any other
+  affiliate needs a separate written grant from the licensor.
+
+Everyone else remains under PolyForm Noncommercial 1.0.0 only (personal and
+other noncommercial purposes). Downloaded DSIP / U.S. Government documents
+are not licensed by these terms.
+
+Notices, patent defense, violations, and no-liability clauses above still
+apply to this addendum.

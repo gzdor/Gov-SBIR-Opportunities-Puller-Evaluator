@@ -158,6 +158,20 @@ SECTIONS: tuple[tuple[str, str], ...] = (
         "4. Mark Pursue / Watch / Pass and Copy brief into your capture note.\n"
         "5. Submit only in DSIP, never from this tool.",
     ),
+    (
+        "License (this app)",
+        "This Discovery app is PolyForm Noncommercial 1.0.0 for everyone "
+        "except one named company. See LICENSE in the repo.\n"
+        "• Personal, research, hobby, and other noncommercial use: allowed.\n"
+        "• Company / commercial use: not allowed, except Camgian Corporation.\n"
+        "Camgian Corporation (CAGE 4NP29; SAM UEI SPDKB76QMK48, also listed "
+        "as HVLBJJBVSUP7; https://www.camgian.com/) may use this software "
+        "for its own commercial purposes, including internal business "
+        "development. That grant does not extend to any other company, "
+        "prime, teammate, customer, or contractor. Camgian may not "
+        "sublicense or resell the app.\n"
+        "Downloaded DSIP PDFs remain U.S. Government works.",
+    ),
 )
 
 

@@ -13,6 +13,12 @@ def test_guide_covers_process_without_copying_consultant_marketing():
     assert "kevin@" not in text
     assert "WhatsApp" not in text
     assert "never scrapes navysbir.com" in text
+    assert "Camgian Corporation" in text
+    assert "4NP29" in text
+    assert "SPDKB76QMK48" in text
+    assert "https://www.camgian.com/" in text
+    assert "sublicense" in text
+    assert "PolyForm Noncommercial" in text
     assert "FY 2027" in text
     assert "Release 2" in text
 
@@ -36,6 +42,7 @@ def test_guide_section_titles_cover_the_process():
     assert "Direct to Phase II vs Phase I" in titles
     assert "FY27 monthly calendar (snapshot, not a scrape)" in titles
     assert titles[0] == "What this tab is"
+    assert "License (this app)" in titles
 
 
 def test_guide_lists_official_links_before_third_party():

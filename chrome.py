@@ -41,7 +41,7 @@ class ChromeMixin:
         )
         ttk.Label(
             header,
-            text="local open topics  ·  no login  ·  extractive only",
+            text="local open topics  ·  no login  ·  extractive only  ·  PolyForm NC",
             style="HeaderHint.TLabel",
         ).grid(row=0, column=1, sticky="w")
         ttk.Label(

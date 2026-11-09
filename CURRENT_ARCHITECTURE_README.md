@@ -201,6 +201,33 @@ Widget construction is split:
 
 `~/.dsip_downloader_state.json` is written atomically (`state_io.py`).
 
+## License
+
+The app (source, GUI, docs we wrote) is
+[PolyForm Noncommercial 1.0.0](LICENSE) **plus one named commercial
+carve-out**. That grant lives in the LICENSE addendum and in the How-SBIR
+tab (**License (this app)**). It is **not** a general commercial license.
+
+```mermaid
+flowchart TB
+    Soft[Discovery source and GUI]
+    Soft --> NC[Everyone else: PolyForm Noncommercial]
+    Soft --> CG[Camgian Corporation only: own commercial use]
+    CG --> ID["CAGE 4NP29 / UEI SPDKB76QMK48"]
+    CG --> Site["camgian.com"]
+    NC --> NoBiz[No other company's commercial use]
+    CG --> NoSub[No sublicense to primes teammates or customers]
+```
+
+- **Camgian Corporation** (CAGE **4NP29**, SAM UEI **SPDKB76QMK48**, also
+  listed **HVLBJJBVSUP7**, led by Gary Butler,
+  [camgian.com](https://www.camgian.com/)) may use the software for its own
+  commercial purposes, including internal BD and capture.
+- No other company receives that grant.
+- Downloaded DSIP PDFs are U.S. Government works and are outside this
+  license.
+- Decision record: [ADR 012](docs/design-decisions/012-camgian-commercial-carve-out.md).
+
 ## Residual product rules
 
 - Open topics only (`solicitationCycleNames: ["openTopics"]`).

@@ -32,8 +32,10 @@ icon.
 
 - Tests as spec: `test_osw_dv002_*`, `test_volume_page_limits_blank_*`,
   `test_http_403_message_*`, `test_gui_restores_latest_manifest_*`.
-- ADRs in `docs/design-decisions/` (000–011) and the adversarial review.
+- ADRs in `docs/design-decisions/` (000–012) and the adversarial review.
 - `dsip_http.py` — the honest network client.
 - `WALKTHROUGH.md` — three-minute recording script of the loop.
 
-PolyForm Noncommercial. Government PDFs stay public-domain U.S. works.
+PolyForm Noncommercial, plus a Camgian Corporation-only commercial
+carve-out (LICENSE addendum / ADR 012). Government PDFs stay public-domain
+U.S. works.

@@ -158,6 +158,12 @@ How-SBIR-works tab. This app does not scrape navysbir.com.
 
 ## License
 
-[PolyForm Noncommercial License 1.0.0](LICENSE). Personal and other
-noncommercial use only. Downloaded government PDFs are public U.S.
-Government documents and are not covered by that license.
+[PolyForm Noncommercial License 1.0.0](LICENSE), with a **single-company
+commercial carve-out** for Camgian Corporation (CAGE 4NP29; SAM UEI
+SPDKB76QMK48 / HVLBJJBVSUP7; [camgian.com](https://www.camgian.com/)).
+Camgian may use this software for its own commercial / BD work. No other
+company may. Camgian may not sublicense or resell it. Personal and other
+noncommercial use remains allowed for everyone else. Downloaded government
+PDFs are public U.S. Government documents and are not covered by that
+license. Details: How-SBIR tab **License (this app)** and
+[ADR 012](docs/design-decisions/012-camgian-commercial-carve-out.md).

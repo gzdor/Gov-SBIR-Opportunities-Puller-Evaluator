@@ -8,9 +8,11 @@ from GitHub, and start the window with one command.
 Developers who already have conda should keep using the main
 [README.md](../README.md) (`dsip-opportunities` env).
 
-This project is licensed [PolyForm Noncommercial](../LICENSE). Personal and
-other noncommercial use only. If you are using it for company business,
-read that license first.
+This project is licensed [PolyForm Noncommercial](../LICENSE) except for
+**Camgian Corporation** (CAGE 4NP29; [camgian.com](https://www.camgian.com/)),
+which may use it for Camgian’s own commercial / BD work. No other company
+may. If you are using it for company business and you are not Camgian,
+read that license first — it does not allow that.
 
 There is **no** official `.exe` download. Unsigned copies are often blocked
 as malware; this guide uses Microsoft Store Python instead.
